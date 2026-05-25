@@ -9,26 +9,61 @@ import androidx.compose.ui.unit.sp
 // Set of Material typography styles to start with
 val Typography = Typography(
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
-    )
-    /* Other default text styles to override
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontSize = 14.sp,
+        letterSpacing = 0.5.sp,
+        color = MonospaceText
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
+        fontSize = 12.sp,
+        letterSpacing = 0.5.sp,
+        color = MonospaceText
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Normal,
+        fontSize = 11.sp,
+        letterSpacing = 0.5.sp,
+        color = SubtextGrey
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        letterSpacing = -0.5.sp,
+        color = MonospaceText
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
+        color = MonospaceText
+    ),
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        color = MonospaceText
+    ),
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        color = MonospaceText
     ),
     labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Light,
         fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        color = SubtextGrey
+    ),
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        color = MonospaceText
     )
-    */
 )

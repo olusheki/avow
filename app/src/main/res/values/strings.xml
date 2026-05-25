@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">aVow</string>
+    <string name="device_admin_description">Enforces unyielding digital binding vows for absolute distraction control.</string>
+    <string name="accessibility_service_description">Actively monitors device workspace boundaries and blocks distracting applications or restricted browser destinations.</string>
 </resources>
