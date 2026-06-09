@@ -11,7 +11,7 @@ Once the vow countdown is active, the system prevents uninstallation, clearing s
 * GitHub Repository: [olusheki/avow](https://github.com/olusheki/avow)
 * Author/Concept: Daniel Olusheki
 * Tooling: Scaffolded and optimized using Google Antigravity 2.0 in conjunction with Android Studio.
-
+ 
 ---
 
 ## System Architecture
