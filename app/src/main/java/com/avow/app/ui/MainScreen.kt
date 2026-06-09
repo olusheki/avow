@@ -533,7 +533,9 @@ fun MainScreen(
                     usageLimitsActivated = usageLimitsUpdated,
                     bindingVowActivated = isVowActive,
                     deactivationRequestTime = deactivationRequestTime,
-                    tickTrigger = tickTrigger
+                    tickTrigger = tickTrigger,
+                    isActiveVowMode = isActiveVowMode,
+                    onVowModeChange = { isActiveVowMode = it }
                 )
             }
             ScreenState.CONFIGURATION -> {
@@ -649,67 +651,71 @@ fun MainScreen(
         if (showUsageLimitsDialog) {
             UsageLimitsConfigDialog(
                 enabled = usageLimitsUpdated,
-                onEnabledChange = { enabled ->
-                    if (isVowActive) {
-                        if (usageLimitsUpdated && !enabled) {
-                            showToast("Error: Usage limits cannot be disabled while locked.")
-                        } else {
-                            usageLimitsUpdated = enabled
-                        }
-                    } else {
-                        usageLimitsUpdated = enabled
-                    }
-                },
                 allowedValue = allowedValue,
-                onAllowedValueChange = { allowedValue = it },
                 allowedUnit = allowedUnit,
-                onAllowedUnitChange = { allowedUnit = it },
                 selectedInterval = selectedInterval,
-                onIntervalSelect = { selectedInterval = it },
                 targetAppSet = targetAppSet,
-                onTargetAppAdd = { pkg ->
-                    if (!targetAppSet.contains(pkg)) {
-                        targetAppSet = targetAppSet + pkg
-                    }
-                },
-                onTargetAppRemove = { pkg ->
-                    if (isVowActive) {
-                        showToast("Error: Target applications cannot be removed while locked.")
-                    } else {
-                        targetAppSet = targetAppSet - pkg
-                    }
-                },
                 specificDomain = specificDomain,
-                onSpecificDomainChange = { specificDomain = it },
                 installedApps = installedApps,
                 isLocked = isVowActive,
                 onDismiss = { showUsageLimitsDialog = false },
-                onUpdate = {
-                    val minutesVal = allowedValue.toFloatOrNull()
+                onUpdate = { newEnabled, newAllowedValue, newAllowedUnit, newSelectedInterval, newTargetAppSet, newSpecificDomain, newIsCollectiveLimit ->
+                    val minutesVal = newAllowedValue.toFloatOrNull()
                     if (minutesVal == null || minutesVal <= 0f) {
                         showToast("Error: Invalid allowed value.")
-                    } else {
-                        if (isVowActive) {
-                            val newRate = getUsageLimitRate(allowedValue, allowedUnit, selectedInterval)
-                            val oldRate = getUsageLimitRate(frozenAllowedValue, frozenAllowedUnit, frozenInterval)
-                            
-                            if (newRate > oldRate) {
-                                showToast("Error: Usage limits can only be made stricter (fewer minutes).")
-                            } else {
-                                frozenAllowedValue = allowedValue
-                                frozenAllowedUnit = allowedUnit
-                                frozenInterval = selectedInterval
-                                showUsageLimitsDialog = false
-                                showToast("Usage limits updated (stricter).")
-                            }
-                        } else {
-                            showUsageLimitsDialog = false
-                            showToast("Usage limits updated.")
+                        return@UsageLimitsConfigDialog
+                    }
+                    
+                    if (isVowActive) {
+                        // 1. Cannot disable limits if previously enabled
+                        if (usageLimitsUpdated && !newEnabled) {
+                            showToast("Error: Usage limits cannot be disabled while locked.")
+                            return@UsageLimitsConfigDialog
                         }
+                        // 2. Cannot remove target apps
+                        val removedApps = targetAppSet - newTargetAppSet
+                        if (removedApps.isNotEmpty()) {
+                            showToast("Error: Target applications cannot be removed while locked.")
+                            return@UsageLimitsConfigDialog
+                        }
+                        // 3. Stricter check (fewer minutes per hour/day rate)
+                        val newRate = getUsageLimitRate(newAllowedValue, newAllowedUnit, newSelectedInterval)
+                        val oldRate = getUsageLimitRate(frozenAllowedValue, frozenAllowedUnit, frozenInterval)
+                        if (newRate > oldRate) {
+                            showToast("Error: Usage limits can only be made stricter (fewer minutes).")
+                            return@UsageLimitsConfigDialog
+                        }
+                        
+                        // Validation passed, update parent states
+                        usageLimitsUpdated = newEnabled
+                        allowedValue = newAllowedValue
+                        allowedUnit = newAllowedUnit
+                        selectedInterval = newSelectedInterval
+                        targetAppSet = newTargetAppSet
+                        specificDomain = newSpecificDomain
+                        isCollectiveLimit = newIsCollectiveLimit
+                        
+                        frozenAllowedValue = newAllowedValue
+                        frozenAllowedUnit = newAllowedUnit
+                        frozenInterval = newSelectedInterval
+                        
+                        showUsageLimitsDialog = false
+                        showToast("Usage limits updated (stricter).")
+                    } else {
+                        // Unlocked: Apply all changes freely
+                        usageLimitsUpdated = newEnabled
+                        allowedValue = newAllowedValue
+                        allowedUnit = newAllowedUnit
+                        selectedInterval = newSelectedInterval
+                        targetAppSet = newTargetAppSet
+                        specificDomain = newSpecificDomain
+                        isCollectiveLimit = newIsCollectiveLimit
+                        
+                        showUsageLimitsDialog = false
+                        showToast("Usage limits updated.")
                     }
                 },
-                isCollectiveLimit = isCollectiveLimit,
-                onCollectiveLimitChange = { isCollectiveLimit = it }
+                isCollectiveLimit = isCollectiveLimit
             )
         }
 
@@ -790,14 +796,13 @@ fun MainScreen(
                         isVowActive = true
                         currentState = ScreenState.LOCKED_VAULT
                         
-                        isActiveVowMode = true
                         val startMs = System.currentTimeMillis()
                         vowStartTimeMs = startMs
                         vowInitialDurationSeconds = additionalSeconds
                         scope.launch {
                             vowDataStore.saveVowConfig(
                                 isVowActive = true,
-                                isActiveVowMode = true,
+                                isActiveVowMode = isActiveVowMode,
                                 remainingVowSeconds = additionalSeconds,
                                 lastSystemUptimeMillis = SystemClock.elapsedRealtime(),
                                 banDomainSet = banDomainSet,
@@ -1013,7 +1018,9 @@ fun VaultDashboard(
     usageLimitsActivated: Boolean,
     bindingVowActivated: Boolean,
     deactivationRequestTime: Long = 0L,
-    tickTrigger: Int = 0
+    tickTrigger: Int = 0,
+    isActiveVowMode: Boolean = false,
+    onVowModeChange: (Boolean) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -1076,6 +1083,60 @@ fun VaultDashboard(
             ClockDigitColumn(digit = formatNum(minutes), label = "MM")
             ClockSeparator()
             ClockDigitColumn(digit = formatNum(seconds), label = "SS")
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Vow Mode Segmented Control
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .height(40.dp)
+                .sharpBorder(1.dp, OutlineAccent)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(if (!isActiveVowMode) MonospaceText else Color.Transparent)
+                    .clickable(enabled = !bindingVowActivated) {
+                        onVowModeChange(false)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "PASSIVE VOW",
+                    color = if (!isActiveVowMode) LightGraphiteBg else MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(OutlineAccent)
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(if (isActiveVowMode) MonospaceText else Color.Transparent)
+                    .clickable(enabled = !bindingVowActivated) {
+                        onVowModeChange(true)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "ACTIVE VOW",
+                    color = if (isActiveVowMode) LightGraphiteBg else MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         Spacer(modifier = Modifier.weight(1f))
@@ -1668,25 +1729,33 @@ fun IntrusionInterceptOverlay(
 @Composable
 fun UsageLimitsConfigDialog(
     enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
     allowedValue: String,
-    onAllowedValueChange: (String) -> Unit,
     allowedUnit: String,
-    onAllowedUnitChange: (String) -> Unit,
     selectedInterval: String,
-    onIntervalSelect: (String) -> Unit,
     targetAppSet: Set<String>,
-    onTargetAppAdd: (String) -> Unit,
-    onTargetAppRemove: (String) -> Unit,
     specificDomain: String,
-    onSpecificDomainChange: (String) -> Unit,
     installedApps: List<Pair<String, String>>,
     isLocked: Boolean,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit,
-    isCollectiveLimit: Boolean,
-    onCollectiveLimitChange: (Boolean) -> Unit
+    onUpdate: (
+        newEnabled: Boolean,
+        newAllowedValue: String,
+        newAllowedUnit: String,
+        newSelectedInterval: String,
+        newTargetAppSet: Set<String>,
+        newSpecificDomain: String,
+        newIsCollectiveLimit: Boolean
+    ) -> Unit,
+    isCollectiveLimit: Boolean
 ) {
+    var localEnabled by remember { mutableStateOf(enabled) }
+    var localAllowedValue by remember { mutableStateOf(allowedValue) }
+    var localAllowedUnit by remember { mutableStateOf(allowedUnit) }
+    var localSelectedInterval by remember { mutableStateOf(selectedInterval) }
+    var localTargetAppSet by remember { mutableStateOf(targetAppSet) }
+    var localSpecificDomain by remember { mutableStateOf(specificDomain) }
+    var localIsCollectiveLimit by remember { mutableStateOf(isCollectiveLimit) }
+
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
@@ -1738,13 +1807,13 @@ fun UsageLimitsConfigDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !isLocked) { onEnabledChange(!enabled) }
+                        .clickable(enabled = !isLocked) { localEnabled = !localEnabled }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (enabled) "[x] ENABLED" else "[ ] ENABLED",
-                        color = if (enabled) MonospaceText else SubtextGrey,
+                        text = if (localEnabled) "[x] ENABLED" else "[ ] ENABLED",
+                        color = if (localEnabled) MonospaceText else SubtextGrey,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -1757,12 +1826,12 @@ fun UsageLimitsConfigDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !isLocked) { onCollectiveLimitChange(!isCollectiveLimit) }
+                        .clickable(enabled = !isLocked) { localIsCollectiveLimit = !localIsCollectiveLimit }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIMIT_MODE: [ ${if (isCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
+                        text = "LIMIT_MODE: [ ${if (localIsCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
                         color = MonospaceText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
@@ -1787,12 +1856,13 @@ fun UsageLimitsConfigDialog(
 
                     // Allowed Value Textbox
                     BasicTextField(
-                        value = allowedValue,
+                        value = localAllowedValue,
                         onValueChange = { newValue ->
                             if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                                onAllowedValueChange(newValue)
+                                localAllowedValue = newValue
                             }
                         },
+                        enabled = !isLocked,
                         textStyle = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 14.sp,
@@ -1828,7 +1898,7 @@ fun UsageLimitsConfigDialog(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = allowedUnit,
+                                text = localAllowedUnit,
                                 color = MonospaceText,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 14.sp
@@ -1851,14 +1921,14 @@ fun UsageLimitsConfigDialog(
                             DropdownMenuItem(
                                 text = { Text("min", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
-                                    onAllowedUnitChange("min")
+                                    localAllowedUnit = "min"
                                     unitDropdownExpanded = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text("hours", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
-                                    onAllowedUnitChange("hours")
+                                    localAllowedUnit = "hours"
                                     unitDropdownExpanded = false
                                 }
                             )
@@ -1886,7 +1956,7 @@ fun UsageLimitsConfigDialog(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = selectedInterval,
+                                text = localSelectedInterval,
                                 color = MonospaceText,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 14.sp
@@ -1909,14 +1979,14 @@ fun UsageLimitsConfigDialog(
                             DropdownMenuItem(
                                 text = { Text("hour", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
-                                    onIntervalSelect("hour")
+                                    localSelectedInterval = "hour"
                                     intervalDropdownExpanded = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text("day", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
-                                    onIntervalSelect("day")
+                                    localSelectedInterval = "day"
                                     intervalDropdownExpanded = false
                                 }
                             )
@@ -1946,7 +2016,7 @@ fun UsageLimitsConfigDialog(
                             .height(40.dp)
                             .border(1.dp, OutlineAccent)
                             .background(MutedSurface)
-                            .clickable { appDropdownExpanded = true }
+                            .clickable(enabled = !isLocked) { appDropdownExpanded = true }
                             .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -1978,7 +2048,9 @@ fun UsageLimitsConfigDialog(
                             DropdownMenuItem(
                                 text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
-                                    onTargetAppAdd(pkg)
+                                    if (!localTargetAppSet.contains(pkg)) {
+                                        localTargetAppSet = localTargetAppSet + pkg
+                                    }
                                     appDropdownExpanded = false
                                 }
                             )
@@ -1986,7 +2058,7 @@ fun UsageLimitsConfigDialog(
                     }
                 }
 
-                if (targetAppSet.isNotEmpty()) {
+                if (localTargetAppSet.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     FlowRow(
@@ -1994,7 +2066,7 @@ fun UsageLimitsConfigDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        targetAppSet.forEach { pkg ->
+                        localTargetAppSet.forEach { pkg ->
                             val label = if (pkg == "All Social Media") {
                                 "All Social Media"
                             } else {
@@ -2002,7 +2074,7 @@ fun UsageLimitsConfigDialog(
                             }
                             InputChip(
                                 text = label,
-                                onRemove = { onTargetAppRemove(pkg) },
+                                onRemove = { localTargetAppSet = localTargetAppSet - pkg },
                                 enabled = !isLocked
                             )
                         }
@@ -2024,8 +2096,8 @@ fun UsageLimitsConfigDialog(
 
                 // Specific Domain Textbox
                 MonospaceTextField(
-                    value = specificDomain,
-                    onValueChange = onSpecificDomainChange,
+                    value = localSpecificDomain,
+                    onValueChange = { localSpecificDomain = it },
                     placeholder = "e.g. youtube.com",
                     enabled = !isLocked
                 )
@@ -2038,7 +2110,17 @@ fun UsageLimitsConfigDialog(
                         .fillMaxWidth()
                         .height(44.dp)
                         .background(MonospaceText)
-                        .clickable { onUpdate() },
+                        .clickable {
+                            onUpdate(
+                                localEnabled,
+                                localAllowedValue,
+                                localAllowedUnit,
+                                localSelectedInterval,
+                                localTargetAppSet,
+                                localSpecificDomain,
+                                localIsCollectiveLimit
+                            )
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(

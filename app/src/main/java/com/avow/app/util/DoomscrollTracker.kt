@@ -14,6 +14,9 @@ class DoomscrollTracker {
 
     fun handleScroll(now: Long, isNightTime: Boolean): TrackingResult {
         if (lastScrollTimeMs == 0L || now - lastScrollTimeMs > 30000L) {
+            if (currentSessionStartMs > 0L && lastScrollTimeMs >= currentSessionStartMs) {
+                accumulatedMs += (lastScrollTimeMs - currentSessionStartMs)
+            }
             currentSessionStartMs = now
         }
         lastScrollTimeMs = now

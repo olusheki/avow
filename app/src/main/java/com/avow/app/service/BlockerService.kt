@@ -188,11 +188,14 @@ class BlockerService : AccessibilityService() {
         if (isVowActive) {
             if (allowedTimeTrackingJob == null || !allowedTimeTrackingJob!!.isActive) {
                 allowedTimeTrackingJob = serviceScope.launch {
+                    val pm = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
                     while (isVowActive) {
                         delay(1000L)
                         val fg = currentForegroundPackage
                         if (fg.isNotEmpty() && isPermittedAppInForeground(fg)) {
-                            vowDataStore.addAllowedScreenTimeMs(1000L)
+                            if (pm == null || pm.isInteractive) {
+                                vowDataStore.addAllowedScreenTimeMs(1000L)
+                            }
                         }
                     }
                 }
@@ -249,6 +252,26 @@ class BlockerService : AccessibilityService() {
             // Avoid intercepting our own app
             if (pkgName == packageName) return
 
+            // Eagerly check and reset cache if a new usage interval begins
+            val nowMs = System.currentTimeMillis()
+            var intervalReset = false
+            runBlocking {
+                cacheMutex.withLock {
+                    if (com.avow.app.util.VowValidator.isNewUsageInterval(nowMs, lastIntervalStartMs, selectedInterval)) {
+                        packageUsageCache.clear()
+                        lastIntervalStartMs = nowMs
+                        intervalReset = true
+                    }
+                }
+            }
+            if (intervalReset) {
+                val serialized = com.avow.app.data.PackageUsageSerializer.serialize(packageUsageCache)
+                packageUsageJsonStr = serialized
+                serviceScope.launch {
+                    vowDataStore.savePackageUsage(serialized, nowMs)
+                }
+            }
+
             // Intercept any attempt to launch target apps during temporary lockout
             if (System.currentTimeMillis() < temporaryLockoutEndTime) {
                 if (isTargetAppPackage(pkgName) || isBrowserWithSpecificDomain(pkgName)) {
@@ -277,7 +300,7 @@ class BlockerService : AccessibilityService() {
                 }
             }
 
-            if (!isVowActive) return
+            if (!isVowActive && !isActiveVowMode) return
 
             // Re-evaluate tracking job on window changes or URL content changes inside browsers
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
@@ -447,19 +470,19 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBrowserWithSpecificDomain(pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isVowActive && !isActiveVowMode) return false
         return isTargetBrowserWithSpecificDomain(pkgName)
     }
 
     private fun isCurrentlyRestrictedForUsage(): Boolean {
-        if (!isVowActive) return false
+        if (!isVowActive && !isActiveVowMode) return false
         if (isRestrictedAppPackage(currentForegroundPackage)) return true
         if (isBrowserWithSpecificDomain(currentForegroundPackage)) return true
         return false
     }
 
     private fun isQuietHoursRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isVowActive && !isActiveVowMode) return false
         if (quietHoursTargetAppSet.contains("All Social Media")) {
             if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
         }
@@ -467,7 +490,7 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isVowActive && !isActiveVowMode) return false
         if (block.targetApps.contains("All Social Media")) {
             if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
         }
@@ -475,7 +498,7 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isVowActive && !isActiveVowMode) return false
         return isTargetAppPackage(pkgName)
     }
 
