@@ -1,12 +1,176 @@
 package com.avow.app.util
 
+import java.security.Key
+import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.Security
 import java.util.Calendar
+import javax.crypto.KeyGenerator
+import javax.crypto.Mac
+import javax.crypto.SecretKey
+import javax.crypto.spec.SecretKeySpec
+
+import com.avow.app.model.VowBlock
 
 object VowValidator {
 
     private const val SALT = "aVow_Enterprise_Security_Anchor_Salt_2026"
     const val MAX_VOW_SECONDS = 30L * 24L * 3600L // 30 days maximum
+    
+    private const val KEY_ALIAS = "vow_hmac_key"
+    private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
+
+    // Helper loaded lazily only when Android KeyStore is actually verified present.
+    // This shields standard JVM unit tests from ClassNotFound/NoClassDefFound errors.
+    private object KeyStoreHelper {
+        fun getAndroidSecretKey(): Key {
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER)
+            keyStore.load(null)
+            if (keyStore.containsAlias(KEY_ALIAS)) {
+                val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+                if (entry != null) {
+                    return entry.secretKey
+                }
+            }
+            
+            val keyGenerator = KeyGenerator.getInstance(
+                android.security.keystore.KeyProperties.KEY_ALGORITHM_HMAC_SHA256,
+                KEYSTORE_PROVIDER
+            )
+            val spec = android.security.keystore.KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                android.security.keystore.KeyProperties.PURPOSE_SIGN or android.security.keystore.KeyProperties.PURPOSE_VERIFY
+            ).build()
+            keyGenerator.init(spec)
+            return keyGenerator.generateKey()
+        }
+    }
+
+    private var jvmTestKey: SecretKey? = null
+    private fun getJvmTestKey(): SecretKey {
+        var key = jvmTestKey
+        if (key == null) {
+            val keyGen = KeyGenerator.getInstance("HmacSHA256")
+            key = keyGen.generateKey()
+            jvmTestKey = key
+        }
+        return key
+    }
+
+    private fun getOrCreateSecretKey(): Key {
+        val providers = Security.getProviders()
+        val hasAndroidKeyStore = providers.any { it.name == KEYSTORE_PROVIDER }
+        return if (hasAndroidKeyStore) {
+            KeyStoreHelper.getAndroidSecretKey()
+        } else {
+            getJvmTestKey()
+        }
+    }
+
+    /**
+     * Validates that all minutes blocked by the old blocks are still blocked by the new blocks.
+     * Handles midnight crossings correctly.
+     */
+    fun validateContainment(oldBlocks: List<VowBlock>, newBlocks: List<VowBlock>): Boolean {
+        val oldBlockedMinutes = getBlockedMinutes(oldBlocks)
+        val newBlockedMinutes = getBlockedMinutes(newBlocks)
+        return oldBlockedMinutes.all { it in newBlockedMinutes }
+    }
+
+    private fun getBlockedMinutes(blocks: List<VowBlock>): Set<Int> {
+        val minutes = mutableSetOf<Int>()
+        for (block in blocks) {
+            if (!block.isEnabled) continue
+            val start = block.startHour * 60 + block.startMin
+            val end = block.endHour * 60 + block.endMin
+            if (start <= end) {
+                for (m in start..end) {
+                    minutes.add(m)
+                }
+            } else {
+                for (m in start..1439) {
+                    minutes.add(m)
+                }
+                for (m in 0..end) {
+                    minutes.add(m)
+                }
+            }
+        }
+        return minutes
+    }
+
+    /**
+     * Computes the HMAC-SHA256 signature using the AndroidKeyStore dynamic symmetric key.
+     */
+    fun computeHMACSignature(
+        isVowActive: Boolean,
+        isActiveVowMode: Boolean,
+        remainingSeconds: Long,
+        lastUptimeMillis: Long,
+        banDomainSet: Set<String>,
+        targetAppSet: Set<String>,
+        deactivationRequestTime: Long,
+        secureFolderEnabled: Boolean = false,
+        privateSpaceEnabled: Boolean = false,
+        lockUninstall: Boolean = false,
+        disallowDataWipe: Boolean = false,
+        disableSafeBoot: Boolean = false,
+        blockPlayStore: Boolean = false,
+        dynamicReinstall: Boolean = false,
+        deactivateUsbDebugging: Boolean = false,
+        quietHoursEnabled: Boolean = false,
+        quietStartHour: Int = 22,
+        quietStartMin: Int = 0,
+        quietEndHour: Int = 7,
+        quietEndMin: Int = 0,
+        quietHoursTargetAppSet: Set<String> = setOf("All Social Media"),
+        quietHoursSpecificDomain: String = "",
+        usageLimitsUpdated: Boolean = false,
+        allowedValue: String = "5",
+        allowedUnit: String = "min",
+        selectedInterval: String = "hour",
+        specificDomain: String = "",
+        isCollectiveLimit: Boolean = false,
+        vowBlocksJson: String = "",
+        temporaryLockoutEndTime: Long = 0L,
+        vowStartTimeMs: Long = 0L,
+        vowInitialDurationSeconds: Long = 0L
+    ): String {
+        val sortedDomains = banDomainSet.sorted().joinToString(",")
+        val sortedApps = targetAppSet.sorted().joinToString(",")
+        val sortedQuietHoursApps = quietHoursTargetAppSet.sorted().joinToString(",")
+        val input = "$isVowActive|$isActiveVowMode|$remainingSeconds|$lastUptimeMillis|$sortedDomains|$sortedApps|$deactivationRequestTime|" +
+                "$secureFolderEnabled|$privateSpaceEnabled|$lockUninstall|$disallowDataWipe|$disableSafeBoot|$blockPlayStore|$dynamicReinstall|" +
+                "$deactivateUsbDebugging|$quietHoursEnabled|$quietStartHour|$quietStartMin|$quietEndHour|$quietEndMin|$sortedQuietHoursApps|" +
+                "$quietHoursSpecificDomain|$usageLimitsUpdated|$allowedValue|$allowedUnit|$selectedInterval|$specificDomain|$isCollectiveLimit|$vowBlocksJson|$temporaryLockoutEndTime|$vowStartTimeMs|$vowInitialDurationSeconds"
+        
+        val secretKey = getOrCreateSecretKey()
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(secretKey)
+        val digest = mac.doFinal(input.toByteArray(Charsets.UTF_8))
+        return digest.fold("") { str, it -> str + "%02x".format(it) }
+    }
+
+    /**
+     * Backwards-compatible signature helper for legacy test suites or configurations.
+     */
+    fun computeStateSignature(
+        isVowActive: Boolean,
+        remainingSeconds: Long,
+        lastUptimeMillis: Long,
+        banDomainSet: Set<String>,
+        targetAppSet: Set<String>
+    ): String {
+        return computeHMACSignature(
+            isVowActive = isVowActive,
+            isActiveVowMode = false,
+            remainingSeconds = remainingSeconds,
+            lastUptimeMillis = lastUptimeMillis,
+            banDomainSet = banDomainSet,
+            targetAppSet = targetAppSet,
+            deactivationRequestTime = 0L
+        )
+    }
 
     /**
      * Calculates remaining seconds for a vow.
@@ -94,21 +258,13 @@ object VowValidator {
     }
 
     /**
-     * Generates a SHA-256 verification hash to represent the current configuration state.
-     * Prevents user database or preference file tampering (such as editing XML directly).
+     * Calculates the Zen Score for a focus session (0-100).
+     * Formula: Zen Score = max(0, 100 - (Intrusions * 10) - (Allowed Screen Time (Min) / Focus Duration (Hr) * 5))
      */
-    fun computeStateSignature(
-        isVowActive: Boolean,
-        remainingSeconds: Long,
-        lastUptimeMillis: Long,
-        banDomainSet: Set<String>,
-        targetAppSet: Set<String>
-    ): String {
-        val sortedDomains = banDomainSet.sorted().joinToString(",")
-        val sortedApps = targetAppSet.sorted().joinToString(",")
-        val input = "$isVowActive|$remainingSeconds|$lastUptimeMillis|$sortedDomains|$sortedApps|$SALT"
-        val md = MessageDigest.getInstance("SHA-256")
-        val digest = md.digest(input.toByteArray(Charsets.UTF_8))
-        return digest.fold("") { str, it -> str + "%02x".format(it) }
+    fun calculateZenScore(intrusions: Int, allowedScreenTimeMs: Long, durationSeconds: Long): Int {
+        val focusDurationHr = durationSeconds / 3600.0
+        val allowedScreenTimeMin = allowedScreenTimeMs / (60.0 * 1000.0)
+        val penalty = (intrusions * 10.0) + (if (focusDurationHr > 0.0) (allowedScreenTimeMin / focusDurationHr) * 5.0 else 0.0)
+        return maxOf(0, minOf(100, kotlin.math.round(100.0 - penalty).toInt()))
     }
 }

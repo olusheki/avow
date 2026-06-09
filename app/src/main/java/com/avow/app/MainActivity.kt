@@ -13,6 +13,8 @@ import com.avow.app.ui.theme.AVowTheme
 
 class MainActivity : ComponentActivity() {
     private val triggerIntrusionState = mutableStateOf(false)
+    private val preload15mVowState = mutableStateOf(false)
+    private val isTemporaryLockoutState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,7 +25,11 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     modifier = Modifier.fillMaxSize(),
                     triggerIntrusion = triggerIntrusionState.value,
-                    onIntrusionHandled = { triggerIntrusionState.value = false }
+                    onIntrusionHandled = { triggerIntrusionState.value = false },
+                    preload15mVow = preload15mVowState.value,
+                    onPreloadHandled = { preload15mVowState.value = false },
+                    isTemporaryLockout = isTemporaryLockoutState.value,
+                    onTemporaryLockoutHandled = { isTemporaryLockoutState.value = false }
                 )
             }
         }
@@ -36,8 +42,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent != null && intent.getBooleanExtra("TRIGGER_INTRUSION", false)) {
-            triggerIntrusionState.value = true
+        if (intent != null) {
+            if (intent.getBooleanExtra("TRIGGER_INTRUSION", false)) {
+                triggerIntrusionState.value = true
+            }
+            if (intent.getBooleanExtra("PRELOAD_15M_VOW", false)) {
+                preload15mVowState.value = true
+            }
+            if (intent.getBooleanExtra("IS_TEMPORARY_LOCKOUT", false)) {
+                isTemporaryLockoutState.value = true
+            }
         }
     }
 }

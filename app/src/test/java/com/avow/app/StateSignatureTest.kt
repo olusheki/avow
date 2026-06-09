@@ -137,4 +137,51 @@ class StateSignatureTest {
         assertTrue(resolvedPrefs[VowDataStore.BLOCK_PLAY_STORE] == true)
         assertTrue(resolvedPrefs[VowDataStore.DEACTIVATE_USB_DEBUGGING] == true)
     }
+
+    @Test
+    fun testSignatureInvalidatedWhenDeactivationTimeTampers() = runTest {
+        val tempFile = tmpFolder.newFile("test_settings_signature_deactivation_tamper.preferences_pb")
+        val testDataStore = PreferenceDataStoreFactory.create(produceFile = { tempFile })
+        val mockContext = mockk<Context>(relaxed = true)
+        
+        val isActive = false
+        val isActiveVowMode = false
+        val remaining = 0L
+        val uptime = 0L
+        val domains = emptySet<String>()
+        val apps = emptySet<String>()
+        val deactivationTime = 1000L
+        
+        val validSig = VowValidator.computeHMACSignature(
+            isVowActive = isActive,
+            isActiveVowMode = isActiveVowMode,
+            remainingSeconds = remaining,
+            lastUptimeMillis = uptime,
+            banDomainSet = domains,
+            targetAppSet = apps,
+            deactivationRequestTime = deactivationTime
+        )
+        
+        testDataStore.edit { prefs ->
+            prefs[VowDataStore.IS_VOW_ACTIVE] = isActive
+            prefs[VowDataStore.IS_ACTIVE_VOW_MODE] = isActiveVowMode
+            prefs[VowDataStore.REMAINING_VOW_SECONDS] = remaining
+            prefs[VowDataStore.LAST_SYSTEM_UPTIME_MILLIS] = uptime
+            prefs[VowDataStore.BAN_DOMAIN_SET] = domains
+            prefs[VowDataStore.TARGET_APP_SET] = apps
+            prefs[VowDataStore.DEACTIVATION_REQUEST_TIME] = deactivationTime
+            prefs[VowDataStore.STATE_SIGNATURE] = validSig
+        }
+
+        // TAMPER DEACTIVATION REQUEST TIME: User edits the file to clear deactivation cooling off delay
+        testDataStore.edit { prefs ->
+            prefs[VowDataStore.DEACTIVATION_REQUEST_TIME] = 0L
+        }
+
+        val realVowDataStore = VowDataStore(mockContext)
+        val tamperedPrefs = testDataStore.data.first()
+        
+        val isValid = realVowDataStore.isSignatureValid(tamperedPrefs)
+        assertFalse(isValid)
+    }
 }

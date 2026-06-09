@@ -50,6 +50,10 @@ import android.content.ComponentName
 import android.util.Log
 import com.avow.app.service.BlockerService
 import com.avow.app.data.VowDataStore
+import com.avow.app.model.VowBlock
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -60,7 +64,9 @@ enum class ScreenState {
     UNLOCKED_VAULT,       // Dashboard with "UNLOCKED" state
     LOCKED_VAULT,         // Dashboard with "LOCKED" countdown active
     CONFIGURATION,        // Scrollable packages/domain setup workspace
-    INTRUSION_INTERCEPT   // Flat graphite gray background with centered smiley
+    INTRUSION_INTERCEPT,  // Flat graphite gray background with centered smiley
+    TEMPORARY_LOCKOUT,    // Inescapable straight face lockout overlay
+    FOCUS_HISTORY         // Focus session logging and analytics
 }
 
 // Slightly darker gray color for activated panels
@@ -70,14 +76,32 @@ val DarkerSurfaceColor = Color(0xFF5A5A5A)
 fun MainScreen(
     modifier: Modifier = Modifier,
     triggerIntrusion: Boolean = false,
-    onIntrusionHandled: () -> Unit = {}
+    onIntrusionHandled: () -> Unit = {},
+    preload15mVow: Boolean = false,
+    onPreloadHandled: () -> Unit = {},
+    isTemporaryLockout: Boolean = false,
+    onTemporaryLockoutHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val vowDataStore = remember { VowDataStore(context) }
     var currentState by remember { mutableStateOf(ScreenState.UNLOCKED_VAULT) }
     var previousState by remember { mutableStateOf(ScreenState.UNLOCKED_VAULT) }
     
     // Vow Lock Active State (Source of truth for timer countdown)
     var isVowActive by remember { mutableStateOf(false) }
+    var isActiveVowMode by remember { mutableStateOf(false) }
+    var deactivationRequestTime by remember { mutableStateOf(0L) }
+    
+    // Ticker to trigger recompositions for the cooling-off button countdown
+    var tickTrigger by remember { mutableStateOf(0) }
+    LaunchedEffect(deactivationRequestTime) {
+        if (deactivationRequestTime > 0L) {
+            while (true) {
+                delay(1000L)
+                tickTrigger++
+            }
+        }
+    }
     
     // In-app Toast Banner State
     var inAppToastMessage by remember { mutableStateOf<String?>(null) }
@@ -126,8 +150,9 @@ fun MainScreen(
     var allowedValue by remember { mutableStateOf("5") }
     var allowedUnit by remember { mutableStateOf("min") }
     var selectedInterval by remember { mutableStateOf("hour") }
-    var targetAppSet by remember { mutableStateOf(setOf("All Social Media")) }
+    var targetAppSet by remember { mutableStateOf(emptySet<String>()) }
     var specificDomain by remember { mutableStateOf("") }
+    var isCollectiveLimit by remember { mutableStateOf(false) }
     
     // Frozen states for stricter-only validation when locked
     var frozenAllowedValue by remember { mutableStateOf("5") }
@@ -141,7 +166,7 @@ fun MainScreen(
     var quietStartMin by remember { mutableStateOf(0) }
     var quietEndHour by remember { mutableStateOf(7) }
     var quietEndMin by remember { mutableStateOf(0) }
-    var quietHoursTargetAppSet by remember { mutableStateOf(setOf("All Social Media")) }
+    var quietHoursTargetAppSet by remember { mutableStateOf(emptySet<String>()) }
     var quietHoursSpecificDomain by remember { mutableStateOf("") }
     
     // Frozen Quiet Hours
@@ -150,11 +175,53 @@ fun MainScreen(
     var frozenQuietStartMin by remember { mutableStateOf(0) }
     var frozenQuietEndHour by remember { mutableStateOf(7) }
     var frozenQuietEndMin by remember { mutableStateOf(0) }
-    var frozenQuietHoursTargetAppSet by remember { mutableStateOf(setOf("All Social Media")) }
+    var frozenQuietHoursTargetAppSet by remember { mutableStateOf(emptySet<String>()) }
     var frozenQuietHoursSpecificDomain by remember { mutableStateOf("") }
+    
+    // Custom Scheduled Blocks
+    var vowBlocks by remember { mutableStateOf(listOf<VowBlock>()) }
+    var frozenVowBlocks by remember { mutableStateOf(listOf<VowBlock>()) }
     
     // Binding Vow Dialog State
     var showBindingVowDialog by remember { mutableStateOf(false) }
+    var initialDaysForDialog by remember { mutableStateOf("00") }
+    var initialHoursForDialog by remember { mutableStateOf("00") }
+    var initialMinutesForDialog by remember { mutableStateOf("00") }
+    var initialSecondsForDialog by remember { mutableStateOf("00") }
+
+    LaunchedEffect(preload15mVow) {
+        if (preload15mVow) {
+            initialDaysForDialog = "00"
+            initialHoursForDialog = "00"
+            initialMinutesForDialog = "15"
+            initialSecondsForDialog = "00"
+            showBindingVowDialog = true
+            onPreloadHandled()
+        }
+    }
+
+    LaunchedEffect(isTemporaryLockout) {
+        if (isTemporaryLockout) {
+            previousState = currentState
+            currentState = ScreenState.TEMPORARY_LOCKOUT
+            onTemporaryLockoutHandled()
+        }
+    }
+
+    // Auto-exit temporary lockout when time has elapsed
+    LaunchedEffect(currentState) {
+        if (currentState == ScreenState.TEMPORARY_LOCKOUT) {
+            while (true) {
+                delay(1000L)
+                val prefs = vowDataStore.preferencesFlow.first()
+                val endTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                if (System.currentTimeMillis() >= endTime) {
+                    currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+                    break
+                }
+            }
+        }
+    }
     
     // Target Profiles / Apps (Samsung Secure Folder, Android 15 Private Space)
     var secureFolderEnabled by remember { mutableStateOf(false) } // Default unselected
@@ -176,7 +243,9 @@ fun MainScreen(
     var minutes by remember { mutableStateOf(0) }
     var seconds by remember { mutableStateOf(0) }
 
-    val vowDataStore = remember { VowDataStore(context) }
+    var vowStartTimeMs by remember { mutableStateOf(0L) }
+    var vowInitialDurationSeconds by remember { mutableStateOf(0L) }
+
     val scope = rememberCoroutineScope()
     var isLoaded by remember { mutableStateOf(false) }
 
@@ -194,6 +263,8 @@ fun MainScreen(
         try {
             val prefs = vowDataStore.preferencesFlow.first()
             isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
+            isActiveVowMode = prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false
+            deactivationRequestTime = prefs[VowDataStore.DEACTIVATION_REQUEST_TIME] ?: 0L
             banDomainSet = prefs[VowDataStore.BAN_DOMAIN_SET] ?: setOf("instagram.com")
             secureFolderEnabled = prefs[VowDataStore.SECURE_FOLDER_ENABLED] ?: false
             privateSpaceEnabled = prefs[VowDataStore.PRIVATE_SPACE_ENABLED] ?: false
@@ -208,14 +279,37 @@ fun MainScreen(
             quietStartMin = prefs[VowDataStore.QUIET_START_MIN] ?: 0
             quietEndHour = prefs[VowDataStore.QUIET_END_HOUR] ?: 7
             quietEndMin = prefs[VowDataStore.QUIET_END_MIN] ?: 0
-            quietHoursTargetAppSet = prefs[VowDataStore.QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
+            quietHoursTargetAppSet = prefs[VowDataStore.QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
             quietHoursSpecificDomain = prefs[VowDataStore.QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
+            vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
+            vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
+            
+            val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
+            vowBlocks = VowBlock.deserializeList(blocksJson)
+            if (vowBlocks.isEmpty()) {
+                vowBlocks = listOf(
+                    VowBlock(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = "Quiet Hours",
+                        isEnabled = quietHoursEnabled,
+                        startHour = quietStartHour,
+                        startMin = quietStartMin,
+                        endHour = quietEndHour,
+                        endMin = quietEndMin,
+                        targetApps = quietHoursTargetAppSet,
+                        specificDomain = quietHoursSpecificDomain
+                    )
+                )
+            }
+            frozenVowBlocks = vowBlocks
+            
             usageLimitsUpdated = prefs[VowDataStore.USAGE_LIMITS_UPDATED] ?: false
             allowedValue = prefs[VowDataStore.ALLOWED_VALUE] ?: "5"
             allowedUnit = prefs[VowDataStore.ALLOWED_UNIT] ?: "min"
             selectedInterval = prefs[VowDataStore.SELECTED_INTERVAL] ?: "hour"
-            targetAppSet = prefs[VowDataStore.TARGET_APP_SET] ?: setOf("All Social Media")
+            targetAppSet = prefs[VowDataStore.TARGET_APP_SET] ?: emptySet()
             specificDomain = prefs[VowDataStore.SPECIFIC_DOMAIN] ?: ""
+            isCollectiveLimit = prefs[VowDataStore.IS_COLLECTIVE_LIMIT] ?: false
 
             // Sync frozen states on load
             frozenAllowedValue = allowedValue
@@ -250,6 +344,7 @@ fun MainScreen(
                 } else {
                     // Expired while closed
                     isVowActive = false
+                    isActiveVowMode = false
                     currentState = ScreenState.UNLOCKED_VAULT
                     DeviceAdmin.assertBindingVow(
                         context = context,
@@ -263,6 +358,7 @@ fun MainScreen(
                         deactivateUsbDebugging = deactivateUsbDebugging
                     )
                     vowDataStore.clearVowConfig()
+                    isCollectiveLimit = false
                 }
             }
             isLoaded = true
@@ -279,12 +375,14 @@ fun MainScreen(
         disableSafeBoot, blockPlayStore, dynamicReinstall, deactivateUsbDebugging,
         banDomainSet, quietHoursEnabled, quietStartHour, quietStartMin, quietEndHour, quietEndMin,
         quietHoursTargetAppSet, quietHoursSpecificDomain,
-        usageLimitsUpdated, allowedValue, allowedUnit, selectedInterval, targetAppSet, specificDomain
+        usageLimitsUpdated, allowedValue, allowedUnit, selectedInterval, targetAppSet, specificDomain,
+        isActiveVowMode, deactivationRequestTime, isCollectiveLimit, vowBlocks
     ) {
         if (isLoaded) {
             try {
                 vowDataStore.saveVowConfig(
                     isVowActive = isVowActive,
+                    isActiveVowMode = isActiveVowMode,
                     remainingVowSeconds = com.avow.app.util.VowValidator.clampRemainingSeconds(days * 86400L + hours * 3600L + minutes * 60L + seconds),
                     lastSystemUptimeMillis = SystemClock.elapsedRealtime(),
                     banDomainSet = banDomainSet,
@@ -308,7 +406,12 @@ fun MainScreen(
                     allowedUnit = allowedUnit,
                     selectedInterval = selectedInterval,
                     targetAppSet = targetAppSet,
-                    specificDomain = specificDomain
+                    specificDomain = specificDomain,
+                    deactivationRequestTime = deactivationRequestTime,
+                    isCollectiveLimit = isCollectiveLimit,
+                    vowBlocksJson = VowBlock.serializeList(vowBlocks),
+                    vowStartTimeMs = vowStartTimeMs,
+                    vowInitialDurationSeconds = vowInitialDurationSeconds
                 )
             } catch (e: Exception) {
                 Log.e("MainScreen", "Failed to auto-save settings", e)
@@ -357,6 +460,7 @@ fun MainScreen(
                         isVowActive = false
                         currentState = ScreenState.UNLOCKED_VAULT
                         vowDataStore.clearVowConfig()
+                        isCollectiveLimit = false
                         showToast("aVow: Temporal lock has expired. Restrictions cleared.")
                         break
                     } else {
@@ -393,16 +497,43 @@ fun MainScreen(
                     onPanelThreeClick = { showBindingVowDialog = true },
                     onSettingsClick = { currentState = ScreenState.CONFIGURATION },
                     onDeactivateClick = {
-                        val err = DeviceAdmin.deactivateDeviceOwner(context)
-                        if (err != null) {
-                            showToast(err)
+                        val currentTime = System.currentTimeMillis()
+                        if (deactivationRequestTime == 0L) {
+                            deactivationRequestTime = currentTime
+                            scope.launch {
+                                vowDataStore.saveDeactivationRequestTime(currentTime)
+                            }
+                            showToast("Deactivation requested. 24-hour cooling-off period initiated.")
                         } else {
-                            showToast("aVow: System Authority Deactivated. Natively Uninstallable.")
+                            val elapsed = currentTime - deactivationRequestTime
+                            val remainingMs = 24L * 3600L * 1000L - elapsed
+                            if (remainingMs > 0) {
+                                val remainingHours = remainingMs / (3600L * 1000L)
+                                val remainingMins = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
+                                val remainingSecs = (remainingMs % (60L * 1000L)) / 1000L
+                                showToast("Cooling-off active. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
+                            } else {
+                                val err = DeviceAdmin.deactivateDeviceOwner(context)
+                                if (err != null) {
+                                    showToast(err)
+                                } else {
+                                    showToast("aVow: System Authority Deactivated. Natively Uninstallable.")
+                                    deactivationRequestTime = 0L
+                                    scope.launch {
+                                        vowDataStore.saveDeactivationRequestTime(0L)
+                                    }
+                                }
+                            }
                         }
                     },
-                    quietHoursActivated = quietHoursEnabled,
+                    onViewFocusInsightsClick = {
+                        currentState = ScreenState.FOCUS_HISTORY
+                    },
+                    quietHoursActivated = vowBlocks.any { it.isEnabled },
                     usageLimitsActivated = usageLimitsUpdated,
-                    bindingVowActivated = isVowActive
+                    bindingVowActivated = isVowActive,
+                    deactivationRequestTime = deactivationRequestTime,
+                    tickTrigger = tickTrigger
                 )
             }
             ScreenState.CONFIGURATION -> {
@@ -473,79 +604,42 @@ fun MainScreen(
                     }
                 )
             }
+            ScreenState.TEMPORARY_LOCKOUT -> {
+                TemporaryLockoutOverlay()
+            }
+            ScreenState.FOCUS_HISTORY -> {
+                FocusHistoryWorkspace(
+                    onBack = {
+                        currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+                    },
+                    db = com.avow.app.data.history.VowDatabase.getDatabase(context)
+                )
+            }
         }
 
-        // Quiet Hours Settings Dialog
+        // Scheduled Blocks Settings Dialog
         if (showQuietHoursDialog) {
             QuietHoursConfigDialog(
-                enabled = quietHoursEnabled,
-                onEnabledChange = { enabled ->
-                    if (isVowActive) {
-                        if (frozenQuietHoursEnabled && !enabled) {
-                            showToast("Error: Quiet hours cannot be disabled while locked.")
-                        } else {
-                            quietHoursEnabled = enabled
-                        }
-                    } else {
-                        quietHoursEnabled = enabled
-                    }
-                },
-                startHour = quietStartHour,
-                onStartHourChange = { quietStartHour = it },
-                startMin = quietStartMin,
-                onStartMinChange = { quietStartMin = it },
-                endHour = quietEndHour,
-                onEndHourChange = { quietEndHour = it },
-                endMin = quietEndMin,
-                onEndMinChange = { quietEndMin = it },
-                targetAppSet = quietHoursTargetAppSet,
-                onTargetAppAdd = { pkg ->
-                    if (!quietHoursTargetAppSet.contains(pkg)) {
-                        quietHoursTargetAppSet = quietHoursTargetAppSet + pkg
-                    }
-                },
-                onTargetAppRemove = { pkg ->
-                    if (isVowActive) {
-                        showToast("Error: Target applications cannot be removed while locked.")
-                    } else {
-                        quietHoursTargetAppSet = quietHoursTargetAppSet - pkg
-                    }
-                },
-                specificDomain = quietHoursSpecificDomain,
-                onSpecificDomainChange = { quietHoursSpecificDomain = it },
+                vowBlocks = vowBlocks,
                 installedApps = installedApps,
                 isLocked = isVowActive,
                 onDismiss = { showQuietHoursDialog = false },
-                onUpdate = {
+                showToast = showToast,
+                onUpdate = { newBlocks ->
                     if (isVowActive) {
-                        if (frozenQuietHoursEnabled && !quietHoursEnabled) {
-                            showToast("Error: Quiet hours cannot be disabled while locked.")
+                        val isContainmentValid = com.avow.app.util.VowValidator.validateContainment(frozenVowBlocks, newBlocks)
+                        if (!isContainmentValid) {
+                            showToast("Error: Scheduled blocks cannot be shortened, shifted or deleted when locked.")
                         } else {
-                            val oldDuration = getQuietHoursDurationMinutes(
-                                frozenQuietStartHour, frozenQuietStartMin,
-                                frozenQuietEndHour, frozenQuietEndMin
-                            )
-                            val newDuration = getQuietHoursDurationMinutes(
-                                quietStartHour, quietStartMin,
-                                quietEndHour, quietEndMin
-                            )
-                            if (quietHoursEnabled && newDuration < oldDuration) {
-                                showToast("Error: Quiet hours duration cannot be shortened ($newDuration min < $oldDuration min).")
-                            } else {
-                                frozenQuietHoursEnabled = quietHoursEnabled
-                                frozenQuietStartHour = quietStartHour
-                                frozenQuietStartMin = quietStartMin
-                                frozenQuietEndHour = quietEndHour
-                                frozenQuietEndMin = quietEndMin
-                                frozenQuietHoursTargetAppSet = quietHoursTargetAppSet
-                                frozenQuietHoursSpecificDomain = quietHoursSpecificDomain
-                                showQuietHoursDialog = false
-                                showToast("Quiet hours updated (stricter: $newDuration min).")
-                            }
+                            vowBlocks = newBlocks
+                            frozenVowBlocks = newBlocks
+                            showQuietHoursDialog = false
+                            showToast("Scheduled blocks updated (stricter).")
                         }
                     } else {
+                        vowBlocks = newBlocks
                         showQuietHoursDialog = false
-                        showToast("Quiet hours updated.")
+                        showToast("Scheduled blocks updated.")
                     }
                 }
             )
@@ -613,7 +707,9 @@ fun MainScreen(
                             showToast("Usage limits updated.")
                         }
                     }
-                }
+                },
+                isCollectiveLimit = isCollectiveLimit,
+                onCollectiveLimitChange = { isCollectiveLimit = it }
             )
         }
 
@@ -621,7 +717,17 @@ fun MainScreen(
         if (showBindingVowDialog) {
             BindingVowConfigDialog(
                 isLockedState = isVowActive,
-                onDismiss = { showBindingVowDialog = false },
+                initialDays = initialDaysForDialog,
+                initialHours = initialHoursForDialog,
+                initialMinutes = initialMinutesForDialog,
+                initialSeconds = initialSecondsForDialog,
+                onDismiss = {
+                    showBindingVowDialog = false
+                    initialDaysForDialog = "00"
+                    initialHoursForDialog = "00"
+                    initialMinutesForDialog = "00"
+                    initialSecondsForDialog = "00"
+                },
                 onConfirm = label@ { additionalSeconds ->
                     if (isVowActive) {
                         val currentTotalSeconds = days * 86400L + hours * 3600L + minutes * 60L + seconds
@@ -640,6 +746,10 @@ fun MainScreen(
                         if (!isAccessibilityServiceEnabled(context, BlockerService::class.java)) {
                             showToast("Error: aVow Accessibility Service is not active. Enable it in Settings first.")
                             showBindingVowDialog = false
+                            initialDaysForDialog = "00"
+                            initialHoursForDialog = "00"
+                            initialMinutesForDialog = "00"
+                            initialSecondsForDialog = "00"
                             return@label
                         }
 
@@ -675,13 +785,19 @@ fun MainScreen(
                         frozenQuietEndMin = quietEndMin
                         frozenQuietHoursTargetAppSet = quietHoursTargetAppSet
                         frozenQuietHoursSpecificDomain = quietHoursSpecificDomain
+                        frozenVowBlocks = vowBlocks
                         
                         isVowActive = true
                         currentState = ScreenState.LOCKED_VAULT
                         
+                        isActiveVowMode = true
+                        val startMs = System.currentTimeMillis()
+                        vowStartTimeMs = startMs
+                        vowInitialDurationSeconds = additionalSeconds
                         scope.launch {
                             vowDataStore.saveVowConfig(
                                 isVowActive = true,
+                                isActiveVowMode = true,
                                 remainingVowSeconds = additionalSeconds,
                                 lastSystemUptimeMillis = SystemClock.elapsedRealtime(),
                                 banDomainSet = banDomainSet,
@@ -705,7 +821,12 @@ fun MainScreen(
                                 allowedUnit = allowedUnit,
                                 selectedInterval = selectedInterval,
                                 targetAppSet = targetAppSet,
-                                specificDomain = specificDomain
+                                specificDomain = specificDomain,
+                                deactivationRequestTime = deactivationRequestTime,
+                                isCollectiveLimit = isCollectiveLimit,
+                                vowBlocksJson = VowBlock.serializeList(vowBlocks),
+                                vowStartTimeMs = startMs,
+                                vowInitialDurationSeconds = additionalSeconds
                             )
                         }
 
@@ -714,6 +835,10 @@ fun MainScreen(
                         }
                     }
                     showBindingVowDialog = false
+                    initialDaysForDialog = "00"
+                    initialHoursForDialog = "00"
+                    initialMinutesForDialog = "00"
+                    initialSecondsForDialog = "00"
                 }
             )
         }
@@ -732,6 +857,75 @@ fun MainScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * Custom Canvas outline straight face mark drawn with a constant-width #8A8A8A accent line.
+ */
+@Composable
+fun StraightFaceOutline(
+    modifier: Modifier = Modifier,
+    color: Color = OutlineAccent
+) {
+    Canvas(modifier = modifier) {
+        val minDim = size.minDimension
+        val scale = minDim / 200f
+        val strokeWidth = 4f * scale
+
+        // 1. Outer Face boundary circle (cx=100, cy=100, r=80)
+        drawCircle(
+            color = color,
+            radius = 80f * scale,
+            center = Offset(100f * scale, 100f * scale),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // 2. Left Eye circle (cx=75, cy=82, r=10)
+        drawCircle(
+            color = color,
+            radius = 10f * scale,
+            center = Offset(75f * scale, 82f * scale),
+            style = Stroke(width = strokeWidth)
+        )
+        
+        // 3. Right Eye circle (cx=125, cy=82, r=10)
+        drawCircle(
+            color = color,
+            radius = 10f * scale,
+            center = Offset(125f * scale, 82f * scale),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // 4. Straight mouth horizontal line
+        drawLine(
+            color = color,
+            start = Offset(70f * scale, 140f * scale),
+            end = Offset(130f * scale, 140f * scale),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+/**
+ * Temporary Lockout Overlay (😐 Face on LightGraphiteBg background).
+ */
+@Composable
+fun TemporaryLockoutOverlay(
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(LightGraphiteBg),
+        contentAlignment = Alignment.Center
+    ) {
+        StraightFaceOutline(
+            modifier = Modifier
+                .fillMaxWidth(0.35f)
+                .aspectRatio(1f)
+        )
     }
 }
 
@@ -814,9 +1008,12 @@ fun VaultDashboard(
     onPanelThreeClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDeactivateClick: () -> Unit,
+    onViewFocusInsightsClick: () -> Unit,
     quietHoursActivated: Boolean,
     usageLimitsActivated: Boolean,
-    bindingVowActivated: Boolean
+    bindingVowActivated: Boolean,
+    deactivationRequestTime: Long = 0L,
+    tickTrigger: Int = 0
 ) {
     Column(
         modifier = Modifier
@@ -908,6 +1105,12 @@ fun VaultDashboard(
                 isActivated = bindingVowActivated,
                 onClick = onPanelThreeClick
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            SharpBorderButton(
+                text = "[ VIEW FOCUS INSIGHTS ]",
+                onClick = onViewFocusInsightsClick,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         if (!bindingVowActivated) {
@@ -918,8 +1121,24 @@ fun VaultDashboard(
                     .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
+                // Read tickTrigger to force recomposition
+                val trigger = tickTrigger
+                val buttonText = if (deactivationRequestTime > 0L) {
+                    val elapsed = System.currentTimeMillis() - deactivationRequestTime
+                    val remainingMs = 24L * 3600L * 1000L - elapsed
+                    if (remainingMs > 0) {
+                        val hoursLeft = remainingMs / (3600L * 1000L)
+                        val minsLeft = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
+                        val secsLeft = (remainingMs % (60L * 1000L)) / 1000L
+                        "{ COOLING OFF: ${String.format("%02d:%02d:%02d", hoursLeft, minsLeft, secsLeft)} }"
+                    } else {
+                        "{ DEACTIVATE DEVICE OWNER }"
+                    }
+                } else {
+                    "{ DEACTIVATE DEVICE OWNER }"
+                }
                 SharpBorderButton(
-                    text = "{ DEACTIVATE DEVICE OWNER }",
+                    text = buttonText,
                     onClick = onDeactivateClick,
                     modifier = Modifier.fillMaxWidth(0.85f)
                 )
@@ -1464,7 +1683,9 @@ fun UsageLimitsConfigDialog(
     installedApps: List<Pair<String, String>>,
     isLocked: Boolean,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    isCollectiveLimit: Boolean,
+    onCollectiveLimitChange: (Boolean) -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -1517,13 +1738,32 @@ fun UsageLimitsConfigDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onEnabledChange(!enabled) }
+                        .clickable(enabled = !isLocked) { onEnabledChange(!enabled) }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (enabled) "[x] ENABLED" else "[ ] ENABLED",
                         color = if (enabled) MonospaceText else SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Limit Mode Toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isLocked) { onCollectiveLimitChange(!isCollectiveLimit) }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LIMIT_MODE: [ ${if (isCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
+                        color = MonospaceText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -1734,13 +1974,6 @@ fun UsageLimitsConfigDialog(
                             .background(MutedSurface)
                             .border(1.dp, OutlineAccent)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("All Social Media", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                            onClick = {
-                                onTargetAppAdd("All Social Media")
-                                appDropdownExpanded = false
-                            }
-                        )
                         installedApps.forEach { (pkg, label) ->
                             DropdownMenuItem(
                                 text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
@@ -1827,36 +2060,28 @@ fun UsageLimitsConfigDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QuietHoursConfigDialog(
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-    startHour: Int,
-    onStartHourChange: (Int) -> Unit,
-    startMin: Int,
-    onStartMinChange: (Int) -> Unit,
-    endHour: Int,
-    onEndHourChange: (Int) -> Unit,
-    endMin: Int,
-    onEndMinChange: (Int) -> Unit,
-    targetAppSet: Set<String>,
-    onTargetAppAdd: (String) -> Unit,
-    onTargetAppRemove: (String) -> Unit,
-    specificDomain: String,
-    onSpecificDomainChange: (String) -> Unit,
+    vowBlocks: List<VowBlock>,
     installedApps: List<Pair<String, String>>,
     isLocked: Boolean,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit
+    showToast: (String) -> Unit,
+    onUpdate: (List<VowBlock>) -> Unit
 ) {
+    var currentBlocks by remember { mutableStateOf(vowBlocks) }
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.85f)
                 .background(LightGraphiteBg)
                 .border(1.dp, OutlineAccent)
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
+            val scrollState = rememberScrollState()
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
             ) {
                 // Header
                 Row(
@@ -1865,7 +2090,7 @@ fun QuietHoursConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "CONFIG: QUIET HOURS",
+                        text = "CONFIG: SCHEDULED BLOCKS",
                         color = MonospaceText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
@@ -1892,287 +2117,355 @@ fun QuietHoursConfigDialog(
                         .background(OutlineAccent)
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Enabled Toggle (Stark Bracket style)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onEnabledChange(!enabled) }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (enabled) "[x] ENABLED" else "[ ] ENABLED",
-                        color = if (enabled) MonospaceText else SubtextGrey,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Start Time
-                Text(
-                    text = "START TIME (HH:MM)",
-                    color = SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    BasicTextField(
-                        value = String.format("%02d", startHour),
-                        onValueChange = { newValue ->
-                            val parsed = newValue.toIntOrNull()
-                            if (parsed != null && parsed in 0..23) {
-                                onStartHourChange(parsed)
-                            }
-                        },
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = MonospaceText,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MonospaceText),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .width(50.dp)
-                                    .height(34.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                innerTextField()
-                            }
-                        }
-                    )
-                    Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
-                    BasicTextField(
-                        value = String.format("%02d", startMin),
-                        onValueChange = { newValue ->
-                            val parsed = newValue.toIntOrNull()
-                            if (parsed != null && parsed in 0..59) {
-                                onStartMinChange(parsed)
-                            }
-                        },
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = MonospaceText,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MonospaceText),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .width(50.dp)
-                                    .height(34.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                innerTextField()
-                            }
-                        }
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // End Time
-                Text(
-                    text = "END TIME (HH:MM)",
-                    color = SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    BasicTextField(
-                        value = String.format("%02d", endHour),
-                        onValueChange = { newValue ->
-                            val parsed = newValue.toIntOrNull()
-                            if (parsed != null && parsed in 0..23) {
-                                onEndHourChange(parsed)
-                            }
-                        },
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = MonospaceText,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MonospaceText),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .width(50.dp)
-                                    .height(34.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                innerTextField()
-                            }
-                        }
-                    )
-                    Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
-                    BasicTextField(
-                        value = String.format("%02d", endMin),
-                        onValueChange = { newValue ->
-                            val parsed = newValue.toIntOrNull()
-                            if (parsed != null && parsed in 0..59) {
-                                onEndMinChange(parsed)
-                            }
-                        },
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = MonospaceText,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MonospaceText),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .width(50.dp)
-                                    .height(34.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                innerTextField()
-                            }
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Target Application Label
-                Text(
-                    text = "TARGET APPLICATIONS",
-                    color = SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Target App Dropdown Select Container
-                var appDropdownExpanded by remember { mutableStateOf(false) }
-                Box {
-                    Row(
+                currentBlocks.forEachIndexed { index, block ->
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(40.dp)
                             .border(1.dp, OutlineAccent)
-                            .background(MutedSurface)
-                            .clickable { appDropdownExpanded = true }
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(12.dp)
                     ) {
                         Text(
-                            text = "+ SELECT APPLICATION",
+                            text = "BLOCK SLOT #${index + 1}",
                             color = MonospaceText,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = "v",
-                            color = SubtextGrey,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    DropdownMenu(
-                        expanded = appDropdownExpanded,
-                        onDismissRequest = { appDropdownExpanded = false },
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .heightIn(max = 250.dp)
-                            .background(MutedSurface)
-                            .border(1.dp, OutlineAccent)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("All Social Media", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                            onClick = {
-                                onTargetAppAdd("All Social Media")
-                                appDropdownExpanded = false
-                            }
-                        )
-                        installedApps.forEach { (pkg, label) ->
-                            DropdownMenuItem(
-                                text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                                onClick = {
-                                    onTargetAppAdd(pkg)
-                                    appDropdownExpanded = false
+                        // Custom Name text field
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("NAME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            BasicTextField(
+                                value = block.name,
+                                onValueChange = { newName ->
+                                    currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(name = newName) else it }
+                                },
+                                enabled = !isLocked,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                cursorBrush = SolidColor(MonospaceText),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(1.dp, OutlineAccent)
+                                    .background(MutedSurface)
+                                    .padding(6.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Enabled Checkbox
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val newEnabled = !block.isEnabled
+                                    if (isLocked && block.isEnabled && !newEnabled) {
+                                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                                    } else {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(isEnabled = newEnabled) else it }
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (block.isEnabled) "[x] ENABLED" else "[ ] ENABLED",
+                                color = if (block.isEnabled) MonospaceText else SubtextGrey,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Start Time (HH:MM)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("START: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            BasicTextField(
+                                value = String.format("%02d", block.startHour),
+                                onValueChange = { newValue ->
+                                    val parsed = newValue.toIntOrNull()
+                                    if (parsed != null && parsed in 0..23) {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(startHour = parsed) else it }
+                                    }
+                                },
+                                enabled = !isLocked,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(MonospaceText),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(44.dp)
+                                            .height(30.dp)
+                                            .border(1.dp, OutlineAccent)
+                                            .background(MutedSurface),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        innerTextField()
+                                    }
+                                }
+                            )
+                            Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
+                            BasicTextField(
+                                value = String.format("%02d", block.startMin),
+                                onValueChange = { newValue ->
+                                    val parsed = newValue.toIntOrNull()
+                                    if (parsed != null && parsed in 0..59) {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(startMin = parsed) else it }
+                                    }
+                                },
+                                enabled = !isLocked,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(MonospaceText),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(44.dp)
+                                            .height(30.dp)
+                                            .border(1.dp, OutlineAccent)
+                                            .background(MutedSurface),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        innerTextField()
+                                    }
                                 }
                             )
                         }
-                    }
-                }
 
-                if (targetAppSet.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        targetAppSet.forEach { pkg ->
-                            val label = if (pkg == "All Social Media") {
-                                "All Social Media"
-                            } else {
-                                installedApps.find { it.first == pkg }?.second ?: pkg
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // End Time (HH:MM)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("END:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            BasicTextField(
+                                value = String.format("%02d", block.endHour),
+                                onValueChange = { newValue ->
+                                    val parsed = newValue.toIntOrNull()
+                                    if (parsed != null && parsed in 0..23) {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(endHour = parsed) else it }
+                                    }
+                                },
+                                enabled = !isLocked,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(MonospaceText),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(44.dp)
+                                            .height(30.dp)
+                                            .border(1.dp, OutlineAccent)
+                                            .background(MutedSurface),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        innerTextField()
+                                    }
+                                }
+                            )
+                            Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
+                            BasicTextField(
+                                value = String.format("%02d", block.endMin),
+                                onValueChange = { newValue ->
+                                    val parsed = newValue.toIntOrNull()
+                                    if (parsed != null && parsed in 0..59) {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(endMin = parsed) else it }
+                                    }
+                                },
+                                enabled = !isLocked,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(MonospaceText),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(44.dp)
+                                            .height(30.dp)
+                                            .border(1.dp, OutlineAccent)
+                                            .background(MutedSurface),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        innerTextField()
+                                    }
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Target Applications
+                        Text(
+                            text = "TARGET APPLICATIONS",
+                            color = SubtextGrey,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp)
+                                .border(1.dp, OutlineAccent)
+                                .background(MutedSurface)
+                                .padding(4.dp)
+                        ) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(installedApps.filter { it.first != "All Social Media" }) { (pkg, label) ->
+                                    val isChecked = block.targetApps.contains(pkg)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (isLocked) {
+                                                    if (isChecked) {
+                                                        showToast("Error: Target applications cannot be removed while locked.")
+                                                    } else {
+                                                        val newApps = block.targetApps + pkg
+                                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(targetApps = newApps) else it }
+                                                    }
+                                                } else {
+                                                    val newApps = if (isChecked) block.targetApps - pkg else block.targetApps + pkg
+                                                    currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(targetApps = newApps) else it }
+                                                }
+                                            }
+                                            .padding(vertical = 4.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isChecked) "[x] " else "[ ] ",
+                                            color = MonospaceText,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            text = "$label ($pkg)",
+                                            color = MonospaceText,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
                             }
-                            InputChip(
-                                text = label,
-                                onRemove = { onTargetAppRemove(pkg) },
-                                enabled = !isLocked
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Specific Domain
+                        Text(
+                            text = "SPECIFIC DOMAIN",
+                            color = SubtextGrey,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        MonospaceTextField(
+                            value = block.specificDomain,
+                            onValueChange = { newDomain ->
+                                currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(specificDomain = newDomain) else it }
+                            },
+                            placeholder = "e.g. youtube.com",
+                            enabled = !isLocked
+                        )
+
+                        // Remove block button
+                        if (currentBlocks.size > 1) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "[ REMOVE BLOCK SLOT ]",
+                                color = LockedRed,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable {
+                                        if (isLocked) {
+                                            showToast("Error: Scheduled blocks cannot be removed while locked.")
+                                        } else {
+                                            currentBlocks = currentBlocks.filter { it.id != block.id }
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Specific Domain Input Label
-                Text(
-                    text = "SPECIFIC DOMAIN",
-                    color = SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Specific Domain Textbox
-                MonospaceTextField(
-                    value = specificDomain,
-                    onValueChange = onSpecificDomainChange,
-                    placeholder = "e.g. youtube.com",
-                    enabled = !isLocked
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
+                // Add slot button
+                if (currentBlocks.size < 4) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .border(1.dp, OutlineAccent)
+                            .background(MutedSurface)
+                            .clickable {
+                                if (isLocked) {
+                                    showToast("Error: Cannot add new block slots while locked.")
+                                } else {
+                                    currentBlocks = currentBlocks + VowBlock(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        name = "Quiet Hours",
+                                        isEnabled = false,
+                                        startHour = 22,
+                                        startMin = 0,
+                                        endHour = 7,
+                                        endMin = 0,
+                                        targetApps = emptySet(),
+                                        specificDomain = ""
+                                    )
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "+ ADD NEW BLOCK SLOT",
+                            color = MonospaceText,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
                 // Update Button
                 Box(
@@ -2180,7 +2473,7 @@ fun QuietHoursConfigDialog(
                         .fillMaxWidth()
                         .height(44.dp)
                         .background(MonospaceText)
-                        .clickable { onUpdate() },
+                        .clickable { onUpdate(currentBlocks) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -2203,12 +2496,16 @@ fun QuietHoursConfigDialog(
 fun BindingVowConfigDialog(
     isLockedState: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (Long) -> Unit
+    onConfirm: (Long) -> Unit,
+    initialDays: String = "00",
+    initialHours: String = "00",
+    initialMinutes: String = "00",
+    initialSeconds: String = "00"
 ) {
-    var vowDays by remember { mutableStateOf("00") }
-    var vowHours by remember { mutableStateOf("00") }
-    var vowMinutes by remember { mutableStateOf("00") }
-    var vowSeconds by remember { mutableStateOf("00") }
+    var vowDays by remember { mutableStateOf(initialDays) }
+    var vowHours by remember { mutableStateOf(initialHours) }
+    var vowMinutes by remember { mutableStateOf(initialMinutes) }
+    var vowSeconds by remember { mutableStateOf(initialSeconds) }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -2431,4 +2728,312 @@ fun isAccessibilityServiceEnabled(context: Context, service: Class<out Accessibi
         }
     }
     return false
+}
+
+@Composable
+fun FocusHistoryWorkspace(
+    onBack: () -> Unit,
+    db: com.avow.app.data.history.VowDatabase,
+    modifier: Modifier = Modifier
+) {
+    val sessions by db.vowSessionDao().getAllSessions().collectAsState(initial = emptyList())
+    
+    val totalSessions = sessions.size
+    val totalDurationSec = sessions.sumOf { it.durationSeconds }
+    val totalIntrusions = sessions.sumOf { it.intrusionsBlocked }
+    val avgZenScore = if (sessions.isNotEmpty()) sessions.map { it.zenScore }.average() else 0.0
+    val last7Sessions = sessions.take(7).reversed()
+    
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(LightGraphiteBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
+    ) {
+        // Stark Header with Back Button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "FOCUS INSIGHTS",
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            SharpBorderButton(
+                text = "{ BACK }",
+                onClick = onBack,
+                modifier = Modifier.width(80.dp)
+            )
+        }
+        
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(OutlineAccent)
+        )
+        
+        // Scrollable content
+        val scrollState = rememberScrollState()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(vertical = 20.dp)
+        ) {
+            // Stats Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                StatBox(label = "TOTAL SESSIONS", value = totalSessions.toString(), modifier = Modifier.weight(1f))
+                StatBox(label = "TOTAL FOCUS TIME", value = formatDurationForHistory(totalDurationSec), modifier = Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                StatBox(label = "BLOCKED INTRUSIONS", value = totalIntrusions.toString(), modifier = Modifier.weight(1f))
+                StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}%", modifier = Modifier.weight(1f))
+            }
+            
+            Spacer(modifier = Modifier.height(28.dp))
+            
+            // Zen Score Trend title
+            Text(
+                text = "ZEN SCORE TREND (LAST 7 SESSIONS)",
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            // Canvas Graph
+            if (sessions.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .sharpBorder(1.dp, OutlineAccent)
+                        .background(LightGraphiteBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "NO SESSIONS RECORDED",
+                        color = SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                }
+            } else {
+                val scores = last7Sessions.map { it.zenScore }
+                val pointCount = scores.size
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(LightGraphiteBg)
+                        .sharpBorder(1.dp, OutlineAccent)
+                        .padding(vertical = 12.dp, horizontal = 24.dp)
+                ) {
+                    val width = size.width
+                    val height = size.height
+                    
+                    val gridLines = listOf(0f, 0.5f, 1f)
+                    for (ratio in gridLines) {
+                        val y = ratio * height
+                        drawLine(
+                            color = OutlineAccent.copy(alpha = 0.3f),
+                            start = Offset(0f, y),
+                            end = Offset(width, y),
+                            strokeWidth = 1f
+                        )
+                    }
+                    
+                    val points = mutableListOf<Offset>()
+                    val xStep = if (pointCount > 1) width / (pointCount - 1) else width
+                    
+                    for (i in scores.indices) {
+                        val score = scores[i]
+                        val y = height - (score / 100f) * height
+                        val x = if (pointCount > 1) i * xStep else width / 2f
+                        points.add(Offset(x, y))
+                    }
+                    
+                    val path = Path().apply {
+                        if (points.isNotEmpty()) {
+                            moveTo(points[0].x, points[0].y)
+                            for (i in 1 until points.size) {
+                                lineTo(points[i].x, points[i].y)
+                            }
+                        }
+                    }
+                    
+                    drawPath(
+                        path = path,
+                        color = MonospaceText,
+                        style = Stroke(width = 3f)
+                    )
+                    
+                    for (point in points) {
+                        drawCircle(
+                            color = MonospaceText,
+                            radius = 5f,
+                            center = point
+                        )
+                        drawCircle(
+                            color = LightGraphiteBg,
+                            radius = 2f,
+                            center = point
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(28.dp))
+            
+            // Session logs title
+            Text(
+                text = "SESSION HISTORY LOGS",
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            // Scrollable list of logs
+            if (sessions.isEmpty()) {
+                Text(
+                    text = "No history log items found.",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    for (session in sessions) {
+                        LogItem(session = session)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatBox(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(72.dp)
+            .sharpBorder(1.dp, OutlineAccent)
+            .background(LightGraphiteBg)
+            .padding(12.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Column {
+            Text(
+                text = label,
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = value,
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Normal
+            )
+        }
+    }
+}
+
+@Composable
+fun LogItem(session: com.avow.app.data.history.VowSession) {
+    val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+        .format(java.util.Date(session.startTimeMillis))
+        
+    val focusStr = formatDurationForHistory(session.durationSeconds)
+    val allowedStr = formatDurationForHistory(session.allowedScreenTimeMs / 1000)
+    
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sharpBorder(1.dp, OutlineAccent)
+            .background(LightGraphiteBg)
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = dateStr,
+                    color = MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "ZEN SCORE: ${session.zenScore}%",
+                    color = if (session.zenScore >= 80) MonospaceText else if (session.zenScore >= 50) SubtextGrey else LockedRed,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "DURATION: $focusStr",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp
+                )
+                Text(
+                    text = "BLOCKED: ${session.intrusionsBlocked}",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp
+                )
+                Text(
+                    text = "ALLOWED: $allowedStr",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp
+                )
+            }
+        }
+    }
+}
+
+fun formatDurationForHistory(totalSeconds: Long): String {
+    val hrs = totalSeconds / 3600
+    val mins = (totalSeconds % 3600) / 60
+    val secs = totalSeconds % 60
+    return if (hrs > 0) "${hrs}h ${mins}m" else if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
 }
