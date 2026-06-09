@@ -14,3 +14,15 @@
 .cxx
 local.properties
 /.idea/
+
+# Planning and reference markdown documents
+aVow Aesthetics.md
+aVow Code Snippet Reference.md
+aVow Feature Map.md
+aVow Misc.md
+aVow Next Steps.md
+aVow Project Specification.md
+aVow ReadMe.md
+
+# HTML code extraction
+code.html
