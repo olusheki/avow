@@ -91,6 +91,7 @@ fun MainScreen(
     var isVowActive by remember { mutableStateOf(false) }
     var isActiveVowMode by remember { mutableStateOf(false) }
     var deactivationRequestTime by remember { mutableStateOf(0L) }
+    var temporaryLockoutEndTime by remember { mutableStateOf(0L) }
     
     // Ticker to trigger recompositions for the cooling-off button countdown
     var tickTrigger by remember { mutableStateOf(0) }
@@ -215,6 +216,7 @@ fun MainScreen(
                 delay(1000L)
                 val prefs = vowDataStore.preferencesFlow.first()
                 val endTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                temporaryLockoutEndTime = endTime
                 if (System.currentTimeMillis() >= endTime) {
                     currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
                     break
@@ -283,6 +285,7 @@ fun MainScreen(
             quietHoursSpecificDomain = prefs[VowDataStore.QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
             vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
             vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
+            temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
             
             val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
             vowBlocks = VowBlock.deserializeList(blocksJson)
@@ -325,15 +328,19 @@ fun MainScreen(
             
             // Resume timer if active
             val savedRemaining = prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L
-            if (isVowActive && savedRemaining > 0) {
+            if (isVowActive) {
                 val lastUptime = prefs[VowDataStore.LAST_SYSTEM_UPTIME_MILLIS] ?: 0L
                 val currentUptime = SystemClock.elapsedRealtime()
                 
-                val finalRemaining = com.avow.app.util.VowValidator.calculateRemainingSeconds(
-                    currentUptimeMillis = currentUptime,
-                    lastUptimeMillis = lastUptime,
-                    savedRemainingSeconds = savedRemaining
-                )
+                val finalRemaining = if (savedRemaining > 0) {
+                    com.avow.app.util.VowValidator.calculateRemainingSeconds(
+                        currentUptimeMillis = currentUptime,
+                        lastUptimeMillis = lastUptime,
+                        savedRemainingSeconds = savedRemaining
+                    )
+                } else {
+                    0L
+                }
                 
                 if (finalRemaining > 0) {
                     days = (finalRemaining / 86400).toInt()
@@ -341,8 +348,9 @@ fun MainScreen(
                     minutes = ((finalRemaining % 3600) / 60).toInt()
                     seconds = (finalRemaining % 60).toInt()
                     currentState = ScreenState.LOCKED_VAULT
+                    isLoaded = true
                 } else {
-                    // Expired while closed
+                    // Expired while closed or savedRemaining <= 0
                     isVowActive = false
                     isActiveVowMode = false
                     currentState = ScreenState.UNLOCKED_VAULT
@@ -357,11 +365,22 @@ fun MainScreen(
                         blockPlayStore = blockPlayStore,
                         deactivateUsbDebugging = deactivateUsbDebugging
                     )
-                    vowDataStore.clearVowConfig()
-                    isCollectiveLimit = false
+                    scope.launch {
+                        vowDataStore.clearVowConfig()
+                        isCollectiveLimit = false
+                        // Reset Compose memory state variables
+                        vowStartTimeMs = 0L
+                        vowInitialDurationSeconds = 0L
+                        days = 0
+                        hours = 0
+                        minutes = 0
+                        seconds = 0
+                        isLoaded = true
+                    }
                 }
+            } else {
+                isLoaded = true
             }
-            isLoaded = true
         } catch (e: Exception) {
             Log.e("MainScreen", "Failed to load DataStore settings", e)
             isLoaded = true
@@ -376,7 +395,8 @@ fun MainScreen(
         banDomainSet, quietHoursEnabled, quietStartHour, quietStartMin, quietEndHour, quietEndMin,
         quietHoursTargetAppSet, quietHoursSpecificDomain,
         usageLimitsUpdated, allowedValue, allowedUnit, selectedInterval, targetAppSet, specificDomain,
-        isActiveVowMode, deactivationRequestTime, isCollectiveLimit, vowBlocks
+        isActiveVowMode, deactivationRequestTime, isCollectiveLimit, vowBlocks,
+        temporaryLockoutEndTime
     ) {
         if (isLoaded) {
             try {
@@ -411,7 +431,8 @@ fun MainScreen(
                     isCollectiveLimit = isCollectiveLimit,
                     vowBlocksJson = VowBlock.serializeList(vowBlocks),
                     vowStartTimeMs = vowStartTimeMs,
-                    vowInitialDurationSeconds = vowInitialDurationSeconds
+                    vowInitialDurationSeconds = vowInitialDurationSeconds,
+                    temporaryLockoutEndTime = temporaryLockoutEndTime
                 )
             } catch (e: Exception) {
                 Log.e("MainScreen", "Failed to auto-save settings", e)
@@ -429,9 +450,9 @@ fun MainScreen(
         return com.avow.app.util.VowValidator.getUsageLimitRate(valueStr, unit, interval)
     }
 
-    // Run active countdown simulation when LOCKED (ticks background-safely whenever isVowActive is true)
-    LaunchedEffect(isVowActive) {
-        if (isVowActive) {
+    // Run active countdown simulation when LOCKED (ticks background-safely whenever isVowActive is true and settings are loaded)
+    LaunchedEffect(isVowActive, isLoaded) {
+        if (isVowActive && isLoaded) {
             var lastCheckUptime = SystemClock.elapsedRealtime()
             while (isVowActive) {
                 delay(1000L)
@@ -458,9 +479,19 @@ fun MainScreen(
                             deactivateUsbDebugging = deactivateUsbDebugging
                         )
                         isVowActive = false
+                        isActiveVowMode = false
                         currentState = ScreenState.UNLOCKED_VAULT
-                        vowDataStore.clearVowConfig()
+                        scope.launch {
+                            vowDataStore.clearVowConfig()
+                        }
                         isCollectiveLimit = false
+                        // Reset Compose memory state variables
+                        vowStartTimeMs = 0L
+                        vowInitialDurationSeconds = 0L
+                        days = 0
+                        hours = 0
+                        minutes = 0
+                        seconds = 0
                         showToast("aVow: Temporal lock has expired. Restrictions cleared.")
                         break
                     } else {
@@ -743,8 +774,9 @@ fun MainScreen(
                         minutes = ((newTotalSeconds % 3600) / 60).toInt()
                         seconds = (newTotalSeconds % 60).toInt()
                         
+                        vowInitialDurationSeconds += additionalSeconds
                         scope.launch {
-                            vowDataStore.saveCountdownState(newTotalSeconds, SystemClock.elapsedRealtime())
+                            vowDataStore.saveCountdownState(newTotalSeconds, SystemClock.elapsedRealtime(), additionalSeconds)
                         }
                         showToast("Added time to the active Vow.")
                     } else {
@@ -774,6 +806,12 @@ fun MainScreen(
 
                         if (err != null) {
                             showToast(err)
+                            showBindingVowDialog = false
+                            initialDaysForDialog = "00"
+                            initialHoursForDialog = "00"
+                            initialMinutesForDialog = "00"
+                            initialSecondsForDialog = "00"
+                            return@label
                         }
                         
                         days = (additionalSeconds / 86400).toInt()
@@ -831,7 +869,9 @@ fun MainScreen(
                                 isCollectiveLimit = isCollectiveLimit,
                                 vowBlocksJson = VowBlock.serializeList(vowBlocks),
                                 vowStartTimeMs = startMs,
-                                vowInitialDurationSeconds = additionalSeconds
+                                vowInitialDurationSeconds = additionalSeconds,
+                                resetStats = true,
+                                temporaryLockoutEndTime = temporaryLockoutEndTime
                             )
                         }
 

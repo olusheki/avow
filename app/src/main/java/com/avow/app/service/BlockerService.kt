@@ -38,7 +38,14 @@ class BlockerService : AccessibilityService() {
             "com.android.settings",
             "com.samsung.android.settings",
             "com.miui.securitycenter",
-            "com.google.android.settings"
+            "com.google.android.settings",
+            "com.oneplus.security",
+            "com.oneplus.settings",
+            "com.coloros.safecenter",
+            "com.coloros.settings",
+            "com.huawei.systemmanager",
+            "com.huawei.settings",
+            "com.vivo.settings"
         )
     }
 
@@ -125,35 +132,6 @@ class BlockerService : AccessibilityService() {
                 doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
-                
-                // Track Vow completion (transition from true to false)
-                if (previousIsVowActive && !activeNow) {
-                    val startTime = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
-                    val initialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
-                    val intrusions = prefs[VowDataStore.VOW_INTRUSIONS_COUNT] ?: 0
-                    val allowedScreenTime = prefs[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS] ?: 0L
-                    val endTime = System.currentTimeMillis()
-                    
-                    val durationSecs = if (initialDurationSeconds > 0) initialDurationSeconds else ((endTime - startTime) / 1000)
-                    val zen = com.avow.app.util.VowValidator.calculateZenScore(
-                        intrusions = intrusions,
-                        allowedScreenTimeMs = allowedScreenTime,
-                        durationSeconds = durationSecs
-                    )
-                    
-                    val session = VowSession(
-                        startTimeMillis = startTime,
-                        endTimeMillis = endTime,
-                        durationSeconds = durationSecs,
-                        intrusionsBlocked = intrusions,
-                        allowedScreenTimeMs = allowedScreenTime,
-                        zenScore = zen
-                    )
-                    
-                    launch(Dispatchers.IO) {
-                        VowDatabase.getDatabase(this@BlockerService).vowSessionDao().insert(session)
-                    }
-                }
                 
                 previousIsVowActive = activeNow
                 manageAllowedTimeTracking()
@@ -300,7 +278,7 @@ class BlockerService : AccessibilityService() {
                 }
             }
 
-            if (!isVowActive && !isActiveVowMode) return
+            if (!isVowActive) return
 
             // Re-evaluate tracking job on window changes or URL content changes inside browsers
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
@@ -316,11 +294,17 @@ class BlockerService : AccessibilityService() {
                 return
             }
 
-            // 2. Browser URL checks (Chrome / Samsung Internet)
+            // 2. Browser URL and Incognito checks (Chrome / Samsung Internet)
             if (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser") {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
                     try {
+                        // Check for Incognito/Secret mode window
+                        if (isIncognitoModeActive(rootNode, pkgName)) {
+                            triggerBlackoutOverlay()
+                            return
+                        }
+
                         val activeUrl = extractUrlOptimized(rootNode, pkgName)
                         if (activeUrl.isNotEmpty()) {
                             val isBanned = banDomainSet.any { domain ->
@@ -334,6 +318,14 @@ class BlockerService : AccessibilityService() {
                     } finally {
                         rootNode.recycle()
                     }
+                }
+            }
+
+            // 2.5. Active Vow Mode continuous lockout check (blocks restricted apps and specific domains 24/7)
+            if (isActiveVowMode && isVowActive) {
+                if (isRestrictedAppPackage(pkgName) || isBrowserWithSpecificDomain(pkgName)) {
+                    triggerBlackoutOverlay()
+                    return
                 }
             }
 
@@ -470,19 +462,19 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBrowserWithSpecificDomain(pkgName: String): Boolean {
-        if (!isVowActive && !isActiveVowMode) return false
+        if (!isVowActive) return false
         return isTargetBrowserWithSpecificDomain(pkgName)
     }
 
     private fun isCurrentlyRestrictedForUsage(): Boolean {
-        if (!isVowActive && !isActiveVowMode) return false
+        if (!isVowActive) return false
         if (isRestrictedAppPackage(currentForegroundPackage)) return true
         if (isBrowserWithSpecificDomain(currentForegroundPackage)) return true
         return false
     }
 
     private fun isQuietHoursRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive && !isActiveVowMode) return false
+        if (!isVowActive) return false
         if (quietHoursTargetAppSet.contains("All Social Media")) {
             if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
         }
@@ -490,7 +482,7 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
-        if (!isVowActive && !isActiveVowMode) return false
+        if (!isVowActive) return false
         if (block.targetApps.contains("All Social Media")) {
             if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
         }
@@ -498,7 +490,7 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive && !isActiveVowMode) return false
+        if (!isVowActive) return false
         return isTargetAppPackage(pkgName)
     }
 
@@ -693,6 +685,32 @@ class BlockerService : AccessibilityService() {
             }
         }
         return ""
+    }
+
+    private fun isIncognitoModeActive(node: AccessibilityNodeInfo, packageName: String): Boolean {
+        val text = node.text?.toString() ?: ""
+        val desc = node.contentDescription?.toString() ?: ""
+        if (packageName == "com.android.chrome") {
+            if (text.contains("Incognito", ignoreCase = true) || desc.contains("Incognito", ignoreCase = true)) {
+                return true
+            }
+        } else if (packageName == "com.sec.android.app.sbrowser") {
+            if (text.contains("Secret mode", ignoreCase = true) || desc.contains("Secret mode", ignoreCase = true) ||
+                text.contains("SecretMode", ignoreCase = true) || desc.contains("SecretMode", ignoreCase = true)) {
+                return true
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                if (isIncognitoModeActive(child, packageName)) {
+                    return true
+                }
+            } finally {
+                child.recycle()
+            }
+        }
+        return false
     }
 
     private fun triggerBlackoutOverlay() {

@@ -36,47 +36,54 @@ class DeviceAdmin : DeviceAdminReceiver() {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminComponent = ComponentName(context, DeviceAdmin::class.java)
 
-            if (activate && !dpm.isAdminActive(adminComponent)) {
-                return "Error: Device Administrator is not active. Elevate app privileges first."
+            val isAdminActive = dpm.isAdminActive(adminComponent)
+            val isDeviceOwner = dpm.isDeviceOwnerApp(context.packageName)
+
+            if (!isAdminActive) {
+                Log.w(TAG, "Device Administrator is not active. Proceeding with Accessibility-only mode.")
+                return null
             }
 
             try {
-                // 1. Prevent the app from being deleted (conditional on user select)
-                dpm.setUninstallBlocked(adminComponent, context.packageName, activate && lockUninstall)
+                // 1. Prevent the app from being deleted (conditional on Device Owner check)
+                if (isDeviceOwner) {
+                    dpm.setUninstallBlocked(adminComponent, context.packageName, activate && lockUninstall)
+                }
             } catch (e: SecurityException) {
                 Log.e(TAG, "Failed setUninstallBlocked", e)
-                if (activate && lockUninstall) return "SecurityException: Device Owner privileges required for setUninstallBlocked."
             }
 
             try {
                 if (activate) {
-                    // 2. Clear app control (Stops user from going to Settings -> Clear Data to reset the app)
-                    if (disallowDataWipe) {
-                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_APPS_CONTROL)
-                    }
-                    
-                    // Safe Boot (Device Owner only)
-                    if (disableSafeBoot) {
-                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT)
-                    }
+                    if (isDeviceOwner) {
+                        // 2. Clear app control (Stops user from going to Settings -> Clear Data to reset the app)
+                        if (disallowDataWipe) {
+                            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_APPS_CONTROL)
+                        }
+                        
+                        // Safe Boot (Device Owner only)
+                        if (disableSafeBoot) {
+                            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT)
+                        }
 
-                    // Factory Reset (Device Owner only)
-                    dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
+                        // Factory Reset (Device Owner only)
+                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
 
-                    // Play Store Blocking (DISALLOW_INSTALL_APPS)
-                    if (blockPlayStore) {
-                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS)
+                        // Play Store Blocking (DISALLOW_INSTALL_APPS)
+                        if (blockPlayStore) {
+                            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS)
+                        }
+
+                        // USB Debugging (Device Owner only)
+                        if (deactivateUsbDebugging) {
+                            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
+                        }
+
+                        // Structural Profile Block (Freezes secondary profiles like Secure Folder/Private Space entirely)
+                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_ADD_USER)
+                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_MODIFY_ACCOUNTS)
+                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_REMOVE_USER)
                     }
-
-                    // USB Debugging (Device Owner only)
-                    if (deactivateUsbDebugging) {
-                        dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
-                    }
-
-                    // Structural Profile Block (Freezes secondary profiles like Secure Folder/Private Space entirely)
-                    dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_ADD_USER)
-                    dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_MODIFY_ACCOUNTS)
-                    dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_REMOVE_USER)
                 } else {
                     // Clear restrictions
                     dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_APPS_CONTROL)
@@ -89,8 +96,7 @@ class DeviceAdmin : DeviceAdminReceiver() {
                     dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_REMOVE_USER)
                 }
             } catch (e: SecurityException) {
-                Log.e(TAG, "Failed to apply user restrictions", e)
-                if (activate) return "SecurityException: Device Owner privileges required for user restrictions."
+                Log.e(TAG, "Failed to apply/clear user restrictions", e)
             }
 
             // 3. Dynamic Suspend Targets (Samsung Secure Folder & Private Space stubs)
@@ -103,8 +109,23 @@ class DeviceAdmin : DeviceAdminReceiver() {
                     dpm.setPackagesSuspended(adminComponent, suspendedPackages.toTypedArray(), activate)
                 } catch (e: SecurityException) {
                     Log.e(TAG, "Failed to toggle package suspension", e)
-                    if (activate) return "SecurityException: Device Owner privileges required for setPackagesSuspended."
                 }
+            }
+
+            // 4. Natively disable Chrome Incognito mode via application restrictions
+            try {
+                if (isDeviceOwner) {
+                    val restrictions = android.os.Bundle().apply {
+                        putInt("IncognitoModeAvailability", 1) // 1 = IncognitoModeDisabled
+                    }
+                    if (activate) {
+                        dpm.setApplicationRestrictions(adminComponent, "com.android.chrome", restrictions)
+                    } else {
+                        dpm.setApplicationRestrictions(adminComponent, "com.android.chrome", android.os.Bundle())
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Failed to apply application restrictions on Chrome", e)
             }
 
             return null

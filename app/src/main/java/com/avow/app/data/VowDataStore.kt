@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import com.avow.app.util.VowValidator
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vow_settings")
@@ -281,7 +282,8 @@ class VowDataStore(private val context: Context) {
         vowBlocksJson: String,
         temporaryLockoutEndTime: Long = 0L,
         vowStartTimeMs: Long = 0L,
-        vowInitialDurationSeconds: Long = 0L
+        vowInitialDurationSeconds: Long = 0L,
+        resetStats: Boolean = false
     ) {
         context.dataStore.edit { preferences ->
             preferences[IS_VOW_ACTIVE] = isVowActive
@@ -317,16 +319,26 @@ class VowDataStore(private val context: Context) {
             preferences[VOW_START_TIME_MS] = vowStartTimeMs
             preferences[VOW_INITIAL_DURATION_SECONDS] = vowInitialDurationSeconds
 
+            if (resetStats) {
+                preferences[VOW_INTRUSIONS_COUNT] = 0
+                preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
+            }
+
             // Compute and save cryptographic signature using HMAC-SHA256
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
     }
 
-    suspend fun saveCountdownState(remainingSeconds: Long, lastSystemUptimeMillis: Long) {
+    suspend fun saveCountdownState(remainingSeconds: Long, lastSystemUptimeMillis: Long, additionalDurationSeconds: Long = 0L) {
         context.dataStore.edit { preferences ->
             val clampedSeconds = VowValidator.clampRemainingSeconds(remainingSeconds)
             preferences[REMAINING_VOW_SECONDS] = clampedSeconds
             preferences[LAST_SYSTEM_UPTIME_MILLIS] = lastSystemUptimeMillis
+            
+            if (additionalDurationSeconds > 0L) {
+                val currentInitial = preferences[VOW_INITIAL_DURATION_SECONDS] ?: 0L
+                preferences[VOW_INITIAL_DURATION_SECONDS] = currentInitial + additionalDurationSeconds
+            }
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
@@ -376,7 +388,35 @@ class VowDataStore(private val context: Context) {
     }
 
     suspend fun clearVowConfig() {
+        var sessionToLog: com.avow.app.data.history.VowSession? = null
+        
         context.dataStore.edit { preferences ->
+            val isActive = preferences[IS_VOW_ACTIVE] ?: false
+            if (isActive) {
+                val startTime = preferences[VOW_START_TIME_MS] ?: 0L
+                val initialDurationSeconds = preferences[VOW_INITIAL_DURATION_SECONDS] ?: 0L
+                val intrusions = preferences[VOW_INTRUSIONS_COUNT] ?: 0
+                val allowedScreenTime = preferences[VOW_ALLOWED_SCREEN_TIME_MS] ?: 0L
+                val endTime = System.currentTimeMillis()
+                
+                // Clamp duration to prevent negative values on clock rollbacks
+                val durationSecs = maxOf(1L, if (initialDurationSeconds > 0) initialDurationSeconds else ((endTime - startTime) / 1000))
+                val zen = VowValidator.calculateZenScore(
+                    intrusions = intrusions,
+                    allowedScreenTimeMs = allowedScreenTime,
+                    durationSeconds = durationSecs
+                )
+                
+                sessionToLog = com.avow.app.data.history.VowSession(
+                    startTimeMillis = startTime,
+                    endTimeMillis = endTime,
+                    durationSeconds = durationSecs,
+                    intrusionsBlocked = intrusions,
+                    allowedScreenTimeMs = allowedScreenTime,
+                    zenScore = zen
+                )
+            }
+
             preferences[IS_VOW_ACTIVE] = false
             preferences[IS_ACTIVE_VOW_MODE] = false
             preferences[REMAINING_VOW_SECONDS] = 0L
@@ -396,6 +436,14 @@ class VowDataStore(private val context: Context) {
             preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+
+        sessionToLog?.let { session ->
+            try {
+                com.avow.app.data.history.VowDatabase.getDatabase(context).vowSessionDao().insert(session)
+            } catch (e: Exception) {
+                android.util.Log.e("VowDataStore", "Failed to log focus session to database", e)
+            }
         }
     }
 

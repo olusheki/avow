@@ -2,6 +2,7 @@ package com.avow.app
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.avow.app.data.VowDataStore
 import com.avow.app.service.BlockerService
 import io.mockk.*
@@ -115,5 +116,176 @@ class BlockerServiceSettingsInterceptTest {
 
         // THEN: Accessibility service must execute GLOBAL_ACTION_HOME redirect
         verify(exactly = 1) { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
+    }
+
+    @Test
+    fun testActiveVowContinuousLockoutBlocksTargetApps() {
+        // GIVEN: Active vow mode is enabled, and a vow is active
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, true)
+
+        val isActiveVowModeField = BlockerService::class.java.getDeclaredField("isActiveVowMode")
+        isActiveVowModeField.isAccessible = true
+        isActiveVowModeField.set(service, true)
+
+        // GIVEN: "com.instagram.android" is in the targetAppSet
+        val targetAppSetField = BlockerService::class.java.getDeclaredField("targetAppSet")
+        targetAppSetField.isAccessible = true
+        targetAppSetField.set(service, setOf("com.instagram.android"))
+
+        // Mock Intent constructor and builder methods to prevent "Intent not mocked" exception
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+
+        // Mock startActivity to verify redirect overlay launch
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.instagram.android"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens Instagram
+        service.onAccessibilityEvent(event)
+
+        // THEN: Blackout overlay is triggered (startActivity called)
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testPassiveVowDoesNotBlockTargetAppsOutsideQuietHoursOrLimits() {
+        // GIVEN: Vow is active, but Active Vow Mode is disabled (Passive Vow)
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, true)
+
+        val isActiveVowModeField = BlockerService::class.java.getDeclaredField("isActiveVowMode")
+        isActiveVowModeField.isAccessible = true
+        isActiveVowModeField.set(service, false)
+
+        val targetAppSetField = BlockerService::class.java.getDeclaredField("targetAppSet")
+        targetAppSetField.isAccessible = true
+        targetAppSetField.set(service, setOf("com.instagram.android"))
+
+        // Quiet hours is disabled
+        val quietHoursEnabledField = BlockerService::class.java.getDeclaredField("quietHoursEnabled")
+        quietHoursEnabledField.isAccessible = true
+        quietHoursEnabledField.set(service, false)
+
+        // Usage limits disabled
+        val usageLimitsUpdatedField = BlockerService::class.java.getDeclaredField("usageLimitsUpdated")
+        usageLimitsUpdatedField.isAccessible = true
+        usageLimitsUpdatedField.set(service, false)
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.instagram.android"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens Instagram
+        service.onAccessibilityEvent(event)
+
+        // THEN: No redirection to blackout overlay
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testActiveVowModeWithoutActiveVowDoesNotBlockTargetApps() {
+        // GIVEN: Active vow mode is enabled, but isVowActive is false
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, false)
+
+        val isActiveVowModeField = BlockerService::class.java.getDeclaredField("isActiveVowMode")
+        isActiveVowModeField.isAccessible = true
+        isActiveVowModeField.set(service, true)
+
+        val targetAppSetField = BlockerService::class.java.getDeclaredField("targetAppSet")
+        targetAppSetField.isAccessible = true
+        targetAppSetField.set(service, setOf("com.instagram.android"))
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.instagram.android"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens Instagram
+        service.onAccessibilityEvent(event)
+
+        // THEN: Redirection is NOT triggered (since vow is not active)
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testChromeIncognitoTriggersBlackoutOverlay() {
+        // GIVEN: Vow is active
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, true)
+
+        // Mock AccessibilityNodeInfo
+        val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { rootNode.text } returns "Incognito"
+        every { rootNode.contentDescription } returns null
+        every { rootNode.childCount } returns 0
+        every { service.rootInActiveWindow } returns rootNode
+
+        // Mock Intent constructor and builder methods to prevent "Intent not mocked" exception
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+
+        // Mock startActivity to verify redirect overlay launch
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.chrome"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens Chrome in Incognito mode
+        service.onAccessibilityEvent(event)
+
+        // THEN: Blackout overlay is triggered
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testChromeSpecificDomainBlocksWhenVowActive() {
+        // GIVEN: Vow is active, and a specific domain is banned
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, true)
+
+        val isActiveVowModeField = BlockerService::class.java.getDeclaredField("isActiveVowMode")
+        isActiveVowModeField.isAccessible = true
+        isActiveVowModeField.set(service, true)
+
+        val specificDomainField = BlockerService::class.java.getDeclaredField("specificDomain")
+        specificDomainField.isAccessible = true
+        specificDomainField.set(service, "instagram.com")
+
+        // Mock AccessibilityNodeInfo containing the URL text "instagram.com/p/123"
+        val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { rootNode.className } returns "android.widget.EditText"
+        every { rootNode.text } returns "instagram.com/p/123"
+        every { rootNode.childCount } returns 0
+        every { service.rootInActiveWindow } returns rootNode
+
+        // Mock Intent constructor and builder methods to prevent "Intent not mocked" exception
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+
+        // Mock startActivity to verify redirect overlay launch
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.chrome"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens Chrome on a banned domain
+        service.onAccessibilityEvent(event)
+
+        // THEN: Blackout overlay is triggered
+        verify(exactly = 1) { service.startActivity(any()) }
     }
 }
