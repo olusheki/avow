@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.graphics.RectangleShape
 import com.avow.app.receiver.DeviceAdmin
 import com.avow.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -1881,47 +1883,17 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Limit Controls
+                // Limit Controls Label & Selectors
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Allow",
+                        text = "Allow: ${localAllowedValue}",
                         color = MonospaceText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp
-                    )
-
-                    // Allowed Value Textbox
-                    BasicTextField(
-                        value = localAllowedValue,
-                        onValueChange = { newValue ->
-                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                                localAllowedValue = newValue
-                            }
-                        },
-                        enabled = !isLocked,
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = MonospaceText,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MonospaceText),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .width(48.dp)
-                                    .height(34.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                innerTextField()
-                            }
-                        }
                     )
 
                     // Unit dropdown (min vs hours)
@@ -2033,6 +2005,27 @@ fun UsageLimitsConfigDialog(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Horizontal Slider (Range 0-60)
+                Slider(
+                    value = localAllowedValue.toFloatOrNull() ?: 0f,
+                    onValueChange = { newValue ->
+                        localAllowedValue = newValue.roundToInt().toString()
+                    },
+                    valueRange = 0f..60f,
+                    steps = 59,
+                    enabled = !isLocked,
+                    colors = SliderDefaults.colors(
+                        thumbColor = MonospaceText,
+                        activeTrackColor = MonospaceText,
+                        inactiveTrackColor = OutlineAccent,
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(20.dp))
 
@@ -2176,6 +2169,129 @@ fun UsageLimitsConfigDialog(
     }
 }
 
+
+/**
+ * Custom wrapper for Material 3 TimePicker Dialog.
+ */
+@Composable
+fun TimePickerDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: @Composable () -> Unit = {},
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    content: @Composable () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            shape = RectangleShape,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .width(IntrinsicSize.Min)
+                .height(IntrinsicSize.Min)
+                .background(containerColor)
+                .border(1.dp, OutlineAccent)
+                .padding(24.dp),
+            color = containerColor
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "SELECT TIME (DIAL VIEW)",
+                    color = MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
+                )
+                content()
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    dismissButton()
+                    confirmButton()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Dial time picker dialog helper.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DialTimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (hour: Int, minute: Int) -> Unit
+) {
+    val state = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = true
+    )
+    
+    TimePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(state.hour, state.minute) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MonospaceText,
+                    contentColor = LightGraphiteBg
+                ),
+                shape = RectangleShape,
+                modifier = Modifier.sharpBorder(1.dp, OutlineAccent)
+            ) {
+                Text("OK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MonospaceText
+                ),
+                shape = RectangleShape,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Text("CANCEL", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = LightGraphiteBg
+    ) {
+        TimePicker(
+            state = state,
+            colors = TimePickerDefaults.colors(
+                clockDialColor = MutedSurface,
+                clockDialSelectedContentColor = LightGraphiteBg,
+                clockDialUnselectedContentColor = MonospaceText,
+                selectorColor = MonospaceText,
+                periodSelectorBorderColor = OutlineAccent,
+                periodSelectorSelectedContainerColor = MutedSurface,
+                periodSelectorUnselectedContainerColor = Color.Transparent,
+                periodSelectorSelectedContentColor = MonospaceText,
+                periodSelectorUnselectedContentColor = SubtextGrey,
+                timeSelectorSelectedContainerColor = MutedSurface,
+                timeSelectorUnselectedContainerColor = MutedSurface,
+                timeSelectorSelectedContentColor = MonospaceText,
+                timeSelectorUnselectedContentColor = MonospaceText
+            )
+        )
+    }
+}
+
 /**
  * Dialog layout configured to match the "CONFIG: QUIET HOURS" specifications.
  */
@@ -2190,6 +2306,7 @@ fun QuietHoursConfigDialog(
     onUpdate: (List<VowBlock>) -> Unit
 ) {
     var currentBlocks by remember { mutableStateOf(vowBlocks) }
+    var timePickerTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
@@ -2318,65 +2435,25 @@ fun QuietHoursConfigDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text("START: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            BasicTextField(
-                                value = String.format("%02d", block.startHour),
-                                onValueChange = { newValue ->
-                                    val parsed = newValue.toIntOrNull()
-                                    if (parsed != null && parsed in 0..23) {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(startHour = parsed) else it }
-                                    }
-                                },
-                                enabled = !isLocked,
-                                textStyle = TextStyle(
+                            Box(
+                                modifier = Modifier
+                                    .width(70.dp)
+                                    .height(30.dp)
+                                    .border(1.dp, OutlineAccent)
+                                    .background(MutedSurface)
+                                    .clickable(enabled = !isLocked) {
+                                        timePickerTarget = Pair(block.id, "START")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = String.format("%02d:%02d", block.startHour, block.startMin),
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 13.sp,
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(MonospaceText),
-                                decorationBox = { innerTextField ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(44.dp)
-                                            .height(30.dp)
-                                            .border(1.dp, OutlineAccent)
-                                            .background(MutedSurface),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        innerTextField()
-                                    }
-                                }
-                            )
-                            Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
-                            BasicTextField(
-                                value = String.format("%02d", block.startMin),
-                                onValueChange = { newValue ->
-                                    val parsed = newValue.toIntOrNull()
-                                    if (parsed != null && parsed in 0..59) {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(startMin = parsed) else it }
-                                    }
-                                },
-                                enabled = !isLocked,
-                                textStyle = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(MonospaceText),
-                                decorationBox = { innerTextField ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(44.dp)
-                                            .height(30.dp)
-                                            .border(1.dp, OutlineAccent)
-                                            .background(MutedSurface),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        innerTextField()
-                                    }
-                                }
-                            )
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -2387,65 +2464,25 @@ fun QuietHoursConfigDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text("END:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            BasicTextField(
-                                value = String.format("%02d", block.endHour),
-                                onValueChange = { newValue ->
-                                    val parsed = newValue.toIntOrNull()
-                                    if (parsed != null && parsed in 0..23) {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(endHour = parsed) else it }
-                                    }
-                                },
-                                enabled = !isLocked,
-                                textStyle = TextStyle(
+                            Box(
+                                modifier = Modifier
+                                    .width(70.dp)
+                                    .height(30.dp)
+                                    .border(1.dp, OutlineAccent)
+                                    .background(MutedSurface)
+                                    .clickable(enabled = !isLocked) {
+                                        timePickerTarget = Pair(block.id, "END")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = String.format("%02d:%02d", block.endHour, block.endMin),
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 13.sp,
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(MonospaceText),
-                                decorationBox = { innerTextField ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(44.dp)
-                                            .height(30.dp)
-                                            .border(1.dp, OutlineAccent)
-                                            .background(MutedSurface),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        innerTextField()
-                                    }
-                                }
-                            )
-                            Text(":", color = MonospaceText, fontFamily = FontFamily.Monospace)
-                            BasicTextField(
-                                value = String.format("%02d", block.endMin),
-                                onValueChange = { newValue ->
-                                    val parsed = newValue.toIntOrNull()
-                                    if (parsed != null && parsed in 0..59) {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(endMin = parsed) else it }
-                                    }
-                                },
-                                enabled = !isLocked,
-                                textStyle = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(MonospaceText),
-                                decorationBox = { innerTextField ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(44.dp)
-                                            .height(30.dp)
-                                            .border(1.dp, OutlineAccent)
-                                            .background(MutedSurface),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        innerTextField()
-                                    }
-                                }
-                            )
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -2604,6 +2641,34 @@ fun QuietHoursConfigDialog(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Time Picker Dialog overlay
+            timePickerTarget?.let { target ->
+                val block = currentBlocks.find { it.id == target.first }
+                if (block != null) {
+                    val initialHour = if (target.second == "START") block.startHour else block.endHour
+                    val initialMinute = if (target.second == "START") block.startMin else block.endMin
+                    DialTimePickerDialog(
+                        initialHour = initialHour,
+                        initialMinute = initialMinute,
+                        onDismiss = { timePickerTarget = null },
+                        onConfirm = { hour, minute ->
+                            currentBlocks = currentBlocks.map {
+                                if (it.id == block.id) {
+                                    if (target.second == "START") {
+                                        it.copy(startHour = hour, startMin = minute)
+                                    } else {
+                                        it.copy(endHour = hour, endMin = minute)
+                                    }
+                                } else {
+                                    it
+                                }
+                            }
+                            timePickerTarget = null
+                        }
                     )
                 }
             }
