@@ -24,7 +24,12 @@ aVow Next Steps.md
 aVow Project Specification.md
 aVow ReadMe.md
 
+
 # HTML code extraction
 code.html
 mockups.html
 generate_screenshots.js
+
+# Course materials and agent reference
+avow-course/
+README_AGENT.md

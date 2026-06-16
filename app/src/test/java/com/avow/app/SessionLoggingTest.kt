@@ -66,7 +66,7 @@ class SessionLoggingTest {
     fun testSaveVowConfigWithResetStats() = runTest {
         // Save initial config with some custom non-zero stats
         testDataStore.edit { preferences ->
-            preferences[VowDataStore.VOW_INTRUSIONS_COUNT] = 5
+            preferences[VowDataStore.VOW_PICKUPS_COUNT] = 5
             preferences[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS] = 10000L
         }
 
@@ -106,7 +106,7 @@ class SessionLoggingTest {
 
         // Verify that stats are reset to 0/0L
         val prefs = testDataStore.data.first()
-        assertEquals(0, prefs[VowDataStore.VOW_INTRUSIONS_COUNT])
+        assertEquals(0, prefs[VowDataStore.VOW_PICKUPS_COUNT])
         assertEquals(0L, prefs[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS])
     }
 
@@ -114,7 +114,7 @@ class SessionLoggingTest {
     fun testSaveVowConfigWithoutResetStats() = runTest {
         // Save initial config with some custom non-zero stats
         testDataStore.edit { preferences ->
-            preferences[VowDataStore.VOW_INTRUSIONS_COUNT] = 5
+            preferences[VowDataStore.VOW_PICKUPS_COUNT] = 5
             preferences[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS] = 10000L
         }
 
@@ -153,7 +153,7 @@ class SessionLoggingTest {
 
         // Verify that stats are NOT reset
         val prefs = testDataStore.data.first()
-        assertEquals(5, prefs[VowDataStore.VOW_INTRUSIONS_COUNT])
+        assertEquals(5, prefs[VowDataStore.VOW_PICKUPS_COUNT])
         assertEquals(10000L, prefs[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS])
     }
 
@@ -164,7 +164,7 @@ class SessionLoggingTest {
 
         val startTime = System.currentTimeMillis() - 60000L
         val initialDuration = 60L
-        val intrusions = 3
+        val pickups = 3
         val allowedScreenTime = 5000L
 
         // GIVEN: Preferences has an active vow and some recorded stats
@@ -172,7 +172,7 @@ class SessionLoggingTest {
             preferences[VowDataStore.IS_VOW_ACTIVE] = true
             preferences[VowDataStore.VOW_START_TIME_MS] = startTime
             preferences[VowDataStore.VOW_INITIAL_DURATION_SECONDS] = initialDuration
-            preferences[VowDataStore.VOW_INTRUSIONS_COUNT] = intrusions
+            preferences[VowDataStore.VOW_PICKUPS_COUNT] = pickups
             preferences[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS] = allowedScreenTime
             
             // Recompute signature so it is valid
@@ -188,7 +188,7 @@ class SessionLoggingTest {
         val session = capturedSession.captured
         assertEquals(startTime, session.startTimeMillis)
         assertEquals(initialDuration, session.durationSeconds)
-        assertEquals(intrusions, session.intrusionsBlocked)
+        assertEquals(pickups, session.pickups)
         assertEquals(allowedScreenTime, session.allowedScreenTimeMs)
         assertTrue(session.endTimeMillis >= startTime)
 
@@ -197,7 +197,7 @@ class SessionLoggingTest {
         assertFalse(prefs[VowDataStore.IS_VOW_ACTIVE] ?: false)
         assertEquals(0L, prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L)
         assertEquals(0L, prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L)
-        assertEquals(0, prefs[VowDataStore.VOW_INTRUSIONS_COUNT] ?: 0)
+        assertEquals(0, prefs[VowDataStore.VOW_PICKUPS_COUNT] ?: 0)
         assertEquals(0L, prefs[VowDataStore.VOW_ALLOWED_SCREEN_TIME_MS] ?: 0L)
     }
 
@@ -255,28 +255,20 @@ class SessionLoggingTest {
     @Test
     fun testCalculateZenScoreEdgeCases() {
         // 1. Zero duration (focus duration = 0)
-        // Penalty should only come from intrusions, screen time penalty is 0 because focusDurationHr is 0.0
-        // formula: zen = max(0, 100 - (intrusions * 10))
-        val zenZeroDurationNoIntrusions = VowValidator.calculateZenScore(intrusions = 0, allowedScreenTimeMs = 5000L, durationSeconds = 0L)
-        assertEquals(100, zenZeroDurationNoIntrusions)
+        // Penalty should only come from pickups, screen time penalty is 0 because durationSeconds <= 0L
+        // formula: zen = max(0, 100 - (pickups * 10))
+        val zenZeroDurationNoPickups = VowValidator.calculateZenScore(pickups = 0, allowedScreenTimeMs = 5000L, durationSeconds = 0L)
+        assertEquals(100, zenZeroDurationNoPickups)
 
-        val zenZeroDurationWithIntrusions = VowValidator.calculateZenScore(intrusions = 3, allowedScreenTimeMs = 5000L, durationSeconds = 0L)
-        assertEquals(70, zenZeroDurationWithIntrusions)
+        val zenZeroDurationWithPickups = VowValidator.calculateZenScore(pickups = 3, allowedScreenTimeMs = 5000L, durationSeconds = 0L)
+        assertEquals(70, zenZeroDurationWithPickups)
 
         // 2. Negative duration (time rollback handling)
-        // Due to maxOf(1L, durationSecs) clamping in clearVowConfig, duration will be at least 1L.
-        // Let's test negative values directly in calculateZenScore: focusDurationHr will be negative, resulting in a negative penalty or positive add-back,
-        // but let's see how the formula behaves:
-        // focusDurationHr = -10.0 / 3600.0
-        // allowedScreenTimeMin = 1.0
-        // penalty = (intrusions * 10) + (allowedScreenTimeMin / focusDurationHr) * 5
-        // zen score is clamped between 0 and 100.
-        val zenNegativeDuration = VowValidator.calculateZenScore(intrusions = 0, allowedScreenTimeMs = 60000L, durationSeconds = -3600L)
-        // Allowed screen time min = 1.0. Focus duration hr = -1.0. (1.0 / -1.0) * 5.0 = -5.0. Penalty = -5.0. Zen = 100 - (-5) = 105, clamped to 100.
+        val zenNegativeDuration = VowValidator.calculateZenScore(pickups = 0, allowedScreenTimeMs = 60000L, durationSeconds = -3600L)
         assertEquals(100, zenNegativeDuration)
 
-        // 3. Extreme intrusion count (clamps to 0)
-        val zenExtremeIntrusions = VowValidator.calculateZenScore(intrusions = 20, allowedScreenTimeMs = 0L, durationSeconds = 3600L)
-        assertEquals(0, zenExtremeIntrusions)
+        // 3. Extreme pickups count (clamps to 0)
+        val zenExtremePickups = VowValidator.calculateZenScore(pickups = 20, allowedScreenTimeMs = 0L, durationSeconds = 3600L)
+        assertEquals(0, zenExtremePickups)
     }
 }

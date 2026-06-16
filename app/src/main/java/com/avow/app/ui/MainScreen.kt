@@ -55,6 +55,10 @@ import com.avow.app.data.VowDataStore
 import com.avow.app.model.VowBlock
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.draw.alpha
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -74,6 +78,7 @@ enum class ScreenState {
 // Slightly darker gray color for activated panels
 val DarkerSurfaceColor = Color(0xFF5A5A5A)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
@@ -1130,50 +1135,53 @@ fun VaultDashboard(
         Spacer(modifier = Modifier.height(20.dp))
 
         // Vow Mode Segmented Control
-        Row(
+        SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .height(40.dp)
-                .sharpBorder(1.dp, OutlineAccent)
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(if (!isActiveVowMode) MonospaceText else Color.Transparent)
-                    .clickable(enabled = !bindingVowActivated) {
-                        onVowModeChange(false)
-                    },
-                contentAlignment = Alignment.Center
+            SegmentedButton(
+                selected = !isActiveVowMode,
+                onClick = { onVowModeChange(false) },
+                shape = RectangleShape,
+                enabled = !bindingVowActivated,
+                icon = {},
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MonospaceText,
+                    activeContentColor = Color(0xFF1C1C1C),
+                    inactiveContainerColor = Color.Transparent,
+                    inactiveContentColor = MonospaceText,
+                    activeBorderColor = OutlineAccent,
+                    inactiveBorderColor = OutlineAccent
+                )
             ) {
                 Text(
                     text = "PASSIVE VOW",
-                    color = if (!isActiveVowMode) LightGraphiteBg else MonospaceText,
+                    color = if (!isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(OutlineAccent)
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(if (isActiveVowMode) MonospaceText else Color.Transparent)
-                    .clickable(enabled = !bindingVowActivated) {
-                        onVowModeChange(true)
-                    },
-                contentAlignment = Alignment.Center
+            SegmentedButton(
+                selected = isActiveVowMode,
+                onClick = { onVowModeChange(true) },
+                shape = RectangleShape,
+                enabled = !bindingVowActivated,
+                icon = {},
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MonospaceText,
+                    activeContentColor = Color(0xFF1C1C1C),
+                    inactiveContainerColor = Color.Transparent,
+                    inactiveContentColor = MonospaceText,
+                    activeBorderColor = OutlineAccent,
+                    inactiveBorderColor = OutlineAccent
+                )
             ) {
                 Text(
                     text = "ACTIVE VOW",
-                    color = if (isActiveVowMode) LightGraphiteBg else MonospaceText,
+                    color = if (isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -1806,8 +1814,11 @@ fun UsageLimitsConfigDialog(
                 .border(1.dp, OutlineAccent)
                 .padding(20.dp)
         ) {
+            val scrollState = rememberScrollState()
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
             ) {
                 // Header Row
                 Row(
@@ -1845,20 +1856,39 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Enabled Toggle (Stark Bracket style)
+                // Enabled Toggle Row with M3 Switch
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !isLocked) { localEnabled = !localEnabled }
                         .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (localEnabled) "[x] ENABLED" else "[ ] ENABLED",
+                        text = "ENABLED",
                         color = if (localEnabled) MonospaceText else SubtextGrey,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                    Switch(
+                        checked = localEnabled,
+                        onCheckedChange = { if (!isLocked) localEnabled = it },
+                        enabled = !isLocked,
+                        thumbContent = null,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = LightGraphiteBg,
+                            checkedTrackColor = MonospaceText,
+                            checkedBorderColor = OutlineAccent,
+                            uncheckedThumbColor = OutlineAccent,
+                            uncheckedTrackColor = Color.Transparent,
+                            uncheckedBorderColor = OutlineAccent,
+                            disabledCheckedThumbColor = OutlineAccent,
+                            disabledCheckedTrackColor = MutedSurface,
+                            disabledUncheckedThumbColor = MutedSurface,
+                            disabledUncheckedTrackColor = Color.Transparent
+                        )
                     )
                 }
 
@@ -2137,33 +2167,35 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Update Button
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .background(MonospaceText)
-                        .clickable {
-                            onUpdate(
-                                localEnabled,
-                                localAllowedValue,
-                                localAllowedUnit,
-                                localSelectedInterval,
-                                localTargetAppSet,
-                                localSpecificDomain,
-                                localIsCollectiveLimit
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "UPDATE",
-                        color = LightGraphiteBg,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+                Spacer(modifier = Modifier.height(72.dp))
+            }
+
+            ExtendedFloatingActionButton(
+                onClick = {
+                    onUpdate(
+                        localEnabled,
+                        localAllowedValue,
+                        localAllowedUnit,
+                        localSelectedInterval,
+                        localTargetAppSet,
+                        localSpecificDomain,
+                        localIsCollectiveLimit
                     )
-                }
+                },
+                containerColor = MonospaceText,
+                contentColor = LightGraphiteBg,
+                shape = RectangleShape,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .sharpBorder(1.dp, OutlineAccent)
+            ) {
+                Text(
+                    text = "UPDATE",
+                    color = Color(0xFF1C1C1C),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -2244,30 +2276,26 @@ fun DialTimePickerDialog(
     TimePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(
-                onClick = { onConfirm(state.hour, state.minute) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MonospaceText,
-                    contentColor = LightGraphiteBg
-                ),
-                shape = RectangleShape,
-                modifier = Modifier.sharpBorder(1.dp, OutlineAccent)
-            ) {
-                Text("OK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-            }
+            Text(
+                text = "OK",
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clickable { onConfirm(state.hour, state.minute) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
         },
         dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = MonospaceText
-                ),
-                shape = RectangleShape,
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Text("CANCEL", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-            }
+            Text(
+                text = "CANCEL",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clickable { onDismiss() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
         },
         containerColor = LightGraphiteBg
     ) {
@@ -2403,7 +2431,7 @@ fun QuietHoursConfigDialog(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Enabled Checkbox
+                        // Enabled Checkbox Row with M3 Switch
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2416,14 +2444,38 @@ fun QuietHoursConfigDialog(
                                     }
                                 }
                                 .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = if (block.isEnabled) "[x] ENABLED" else "[ ] ENABLED",
+                                text = "ENABLED",
                                 color = if (block.isEnabled) MonospaceText else SubtextGrey,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                            Switch(
+                                checked = block.isEnabled,
+                                onCheckedChange = { newEnabled ->
+                                    if (isLocked && block.isEnabled && !newEnabled) {
+                                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                                    } else {
+                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(isEnabled = newEnabled) else it }
+                                    }
+                                },
+                                thumbContent = null,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = LightGraphiteBg,
+                                    checkedTrackColor = MonospaceText,
+                                    checkedBorderColor = OutlineAccent,
+                                    uncheckedThumbColor = OutlineAccent,
+                                    uncheckedTrackColor = Color.Transparent,
+                                    uncheckedBorderColor = OutlineAccent,
+                                    disabledCheckedThumbColor = OutlineAccent,
+                                    disabledCheckedTrackColor = MutedSurface,
+                                    disabledUncheckedThumbColor = MutedSurface,
+                                    disabledUncheckedTrackColor = Color.Transparent
+                                )
                             )
                         }
 
@@ -2626,23 +2678,25 @@ fun QuietHoursConfigDialog(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Update Button
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .background(MonospaceText)
-                        .clickable { onUpdate(currentBlocks) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "UPDATE",
-                        color = LightGraphiteBg,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Spacer(modifier = Modifier.height(72.dp))
+            }
+
+            ExtendedFloatingActionButton(
+                onClick = { onUpdate(currentBlocks) },
+                containerColor = MonospaceText,
+                contentColor = LightGraphiteBg,
+                shape = RectangleShape,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .sharpBorder(1.dp, OutlineAccent)
+            ) {
+                Text(
+                    text = "UPDATE",
+                    color = Color(0xFF1C1C1C),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             // Time Picker Dialog overlay
@@ -2677,7 +2731,87 @@ fun QuietHoursConfigDialog(
 }
 
 /**
- * Dialog layout configured to match the "CONFIG: BINDING VOW" specifications with DD:HH:MM:SS format input fields.
+ * Wheel number picker widget representing a tactile mechanical stopwatch digit selector.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun WheelNumberPicker(
+    range: IntRange,
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val items = remember(range) { range.toList() }
+    val initialIndex = remember(value, items) {
+        val idx = items.indexOf(value)
+        if (idx != -1) idx else 0
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+
+    LaunchedEffect(value) {
+        val idx = items.indexOf(value)
+        if (idx != -1 && listState.firstVisibleItemIndex != idx && !listState.isScrollInProgress) {
+            listState.scrollToItem(idx)
+        }
+    }
+
+    LaunchedEffect(listState.firstVisibleItemIndex) {
+        val index = listState.firstVisibleItemIndex
+        if (index in items.indices) {
+            onValueChange(items[index])
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .height(120.dp)
+            .width(54.dp)
+            .border(1.dp, OutlineAccent)
+            .background(MutedSurface),
+        contentAlignment = Alignment.Center
+    ) {
+        // Center selection reticle overlay
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .border(1.dp, MonospaceText)
+                .background(Color.White.copy(alpha = 0.03f))
+        )
+
+        LazyColumn(
+            state = listState,
+            flingBehavior = flingBehavior,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            items(items.size) { index ->
+                val itemValue = items[index]
+                val isSelected = listState.firstVisibleItemIndex == index
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = String.format("%02d", itemValue),
+                        color = if (isSelected) MonospaceText else SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = if (isSelected) 18.sp else 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.alpha(if (isSelected) 1f else 0.5f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Dialog layout configured to match the "CONFIG: BINDING VOW" specifications with stopwatch-style duration pickers.
  */
 @Composable
 fun BindingVowConfigDialog(
@@ -2689,10 +2823,10 @@ fun BindingVowConfigDialog(
     initialMinutes: String = "00",
     initialSeconds: String = "00"
 ) {
-    var vowDays by remember { mutableStateOf(initialDays) }
-    var vowHours by remember { mutableStateOf(initialHours) }
-    var vowMinutes by remember { mutableStateOf(initialMinutes) }
-    var vowSeconds by remember { mutableStateOf(initialSeconds) }
+    var vowDays by remember { mutableStateOf(initialDays.toIntOrNull() ?: 0) }
+    var vowHours by remember { mutableStateOf(initialHours.toIntOrNull() ?: 0) }
+    var vowMinutes by remember { mutableStateOf(initialMinutes.toIntOrNull() ?: 0) }
+    var vowSeconds by remember { mutableStateOf(initialSeconds.toIntOrNull() ?: 0) }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -2743,35 +2877,51 @@ fun BindingVowConfigDialog(
 
                 // DD:HH:MM:SS Label
                 Text(
-                    text = "DURATION (DD:HH:MM:SS) - MAX 99:99:99:99",
+                    text = "DURATION (DD:HH:MM:SS) - MAX 99:23:59:59",
                     color = SubtextGrey,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    VowTimeInput(value = vowDays, onValueChange = { vowDays = it }, label = "DD")
-                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 14.dp))
-                    VowTimeInput(value = vowHours, onValueChange = { vowHours = it }, label = "HH")
-                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 14.dp))
-                    VowTimeInput(value = vowMinutes, onValueChange = { vowMinutes = it }, label = "MM")
-                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 14.dp))
-                    VowTimeInput(value = vowSeconds, onValueChange = { vowSeconds = it }, label = "SS")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        WheelNumberPicker(range = 0..99, value = vowDays, onValueChange = { vowDays = it })
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("DD", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                    }
+                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 14.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        WheelNumberPicker(range = 0..23, value = vowHours, onValueChange = { vowHours = it })
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("HH", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                    }
+                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 14.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        WheelNumberPicker(range = 0..59, value = vowMinutes, onValueChange = { vowMinutes = it })
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("MM", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                    }
+                    Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 14.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        WheelNumberPicker(range = 0..59, value = vowSeconds, onValueChange = { vowSeconds = it })
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("SS", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Calculations
-                val d = vowDays.toLongOrNull() ?: 0L
-                val h = vowHours.toLongOrNull() ?: 0L
-                val m = vowMinutes.toLongOrNull() ?: 0L
-                val s = vowSeconds.toLongOrNull() ?: 0L
+                val d = vowDays.toLong()
+                val h = vowHours.toLong()
+                val m = vowMinutes.toLong()
+                val s = vowSeconds.toLong()
                 val totalSeconds = d * 86400L + h * 3600L + m * 60L + s
                 val isValid = totalSeconds > 0L
 
@@ -2795,60 +2945,6 @@ fun BindingVowConfigDialog(
                 }
             }
         }
-    }
-}
-
-/**
- * Text box helper to accept exactly two digits for duration fields.
- */
-@Composable
-fun VowTimeInput(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(54.dp)
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = { newValue ->
-                val filtered = newValue.filter { it.isDigit() }
-                if (filtered.length <= 2) {
-                    onValueChange(filtered)
-                }
-            },
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 18.sp,
-                color = MonospaceText,
-                textAlign = TextAlign.Center
-            ),
-            cursorBrush = SolidColor(MonospaceText),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp)
-                        .border(1.dp, OutlineAccent)
-                        .background(MutedSurface),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (value.isEmpty()) {
-                        Text("00", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
-                    }
-                    innerTextField()
-                }
-            }
-        )
-        Text(
-            text = label,
-            color = SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 9.sp,
-            modifier = Modifier.padding(top = 4.dp)
-        )
     }
 }
 
@@ -2927,7 +3023,7 @@ fun FocusHistoryWorkspace(
     
     val totalSessions = sessions.size
     val totalDurationSec = sessions.sumOf { it.durationSeconds }
-    val totalIntrusions = sessions.sumOf { it.intrusionsBlocked }
+    val totalPickups = sessions.sumOf { it.pickups }
     val avgZenScore = if (sessions.isNotEmpty()) sessions.map { it.zenScore }.average() else 0.0
     val last7Sessions = sessions.take(7).reversed()
     
@@ -2990,7 +3086,7 @@ fun FocusHistoryWorkspace(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                StatBox(label = "BLOCKED INTRUSIONS", value = totalIntrusions.toString(), modifier = Modifier.weight(1f))
+                StatBox(label = "DEVICE PICKUPS", value = totalPickups.toString(), modifier = Modifier.weight(1f))
                 StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}%", modifier = Modifier.weight(1f))
             }
             
@@ -3202,7 +3298,7 @@ fun LogItem(session: com.avow.app.data.history.VowSession) {
                     fontSize = 10.sp
                 )
                 Text(
-                    text = "BLOCKED: ${session.intrusionsBlocked}",
+                    text = "PICKUPS: ${session.pickups}",
                     color = SubtextGrey,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp

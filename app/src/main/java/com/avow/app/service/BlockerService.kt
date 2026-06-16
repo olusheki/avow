@@ -88,6 +88,16 @@ class BlockerService : AccessibilityService() {
     @Volatile private var vowBlocks = emptyList<VowBlock>()
     private lateinit var vowDataStore: VowDataStore
 
+    private val userPresentReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_PRESENT && isVowActive) {
+                serviceScope.launch {
+                    vowDataStore.incrementPickupsCount()
+                }
+            }
+        }
+    }
+
     @Volatile private var doomscrollLastClosedTime = 0L
     @Volatile private var doomscrollAccumulatedMs = 0L
     @Volatile private var temporaryLockoutEndTime = 0L
@@ -98,6 +108,7 @@ class BlockerService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
+        registerReceiver(userPresentReceiver, android.content.IntentFilter(Intent.ACTION_USER_PRESENT))
         
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
@@ -572,9 +583,6 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun triggerLockoutOverlay() {
-        serviceScope.launch {
-            vowDataStore.incrementIntrusionsCount()
-        }
         val overlayIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("IS_TEMPORARY_LOCKOUT", true)
@@ -714,9 +722,6 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun triggerBlackoutOverlay() {
-        serviceScope.launch {
-            vowDataStore.incrementIntrusionsCount()
-        }
         val overlayIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("TRIGGER_INTRUSION", true)
@@ -728,6 +733,11 @@ class BlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(userPresentReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unregister userPresentReceiver", e)
+        }
         serviceJob.cancel()
     }
 }

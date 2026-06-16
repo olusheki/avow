@@ -26,7 +26,7 @@ class VowSessionDao(private val dbHelper: VowDbHelper) {
             put("startTimeMillis", session.startTimeMillis)
             put("endTimeMillis", session.endTimeMillis)
             put("durationSeconds", session.durationSeconds)
-            put("intrusionsBlocked", session.intrusionsBlocked)
+            put("pickups", session.pickups)
             put("allowedScreenTimeMs", session.allowedScreenTimeMs)
             put("zenScore", session.zenScore)
         }
@@ -53,7 +53,7 @@ class VowSessionDao(private val dbHelper: VowDbHelper) {
                     val startCol = c.getColumnIndex("startTimeMillis")
                     val endCol = c.getColumnIndex("endTimeMillis")
                     val durCol = c.getColumnIndex("durationSeconds")
-                    val intCol = c.getColumnIndex("intrusionsBlocked")
+                    val pickCol = c.getColumnIndex("pickups")
                     val screenCol = c.getColumnIndex("allowedScreenTimeMs")
                     val zenCol = c.getColumnIndex("zenScore")
 
@@ -64,7 +64,7 @@ class VowSessionDao(private val dbHelper: VowDbHelper) {
                                 startTimeMillis = if (startCol >= 0) c.getLong(startCol) else 0L,
                                 endTimeMillis = if (endCol >= 0) c.getLong(endCol) else 0L,
                                 durationSeconds = if (durCol >= 0) c.getLong(durCol) else 0L,
-                                intrusionsBlocked = if (intCol >= 0) c.getInt(intCol) else 0,
+                                pickups = if (pickCol >= 0) c.getInt(pickCol) else 0,
                                 allowedScreenTimeMs = if (screenCol >= 0) c.getLong(screenCol) else 0L,
                                 zenScore = if (zenCol >= 0) c.getInt(zenCol) else 0
                             )
@@ -108,11 +108,11 @@ class VowSessionDao(private val dbHelper: VowDbHelper) {
         }
     }
 
-    fun getTotalIntrusionsBlocked(): Flow<Int?> {
+    fun getTotalPickupsCount(): Flow<Int?> {
         return mutationTrigger.flatMapLatest {
             flow {
                 val db = dbHelper.readableDatabase
-                val cursor = db.rawQuery("SELECT SUM(intrusionsBlocked) FROM vow_sessions", null)
+                val cursor = db.rawQuery("SELECT SUM(pickups) FROM vow_sessions", null)
                 var sum: Int? = null
                 cursor.use { c ->
                     if (c.moveToFirst() && !c.isNull(0)) {

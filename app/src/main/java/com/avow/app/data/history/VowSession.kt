@@ -5,7 +5,7 @@ data class VowSession(
     val startTimeMillis: Long,
     val endTimeMillis: Long,
     val durationSeconds: Long,
-    val intrusionsBlocked: Int,
+    val pickups: Int,
     val allowedScreenTimeMs: Long,
     val zenScore: Int
 )

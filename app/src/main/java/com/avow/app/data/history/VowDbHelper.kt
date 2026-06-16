@@ -17,7 +17,7 @@ class VowDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         const val DATABASE_NAME = "vow_database"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
 
         private const val CREATE_TABLE_SESSIONS = """
             CREATE TABLE vow_sessions (
@@ -25,7 +25,7 @@ class VowDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 startTimeMillis INTEGER NOT NULL,
                 endTimeMillis INTEGER NOT NULL,
                 durationSeconds INTEGER NOT NULL,
-                intrusionsBlocked INTEGER NOT NULL,
+                pickups INTEGER NOT NULL,
                 allowedScreenTimeMs INTEGER NOT NULL,
                 zenScore INTEGER NOT NULL
             )

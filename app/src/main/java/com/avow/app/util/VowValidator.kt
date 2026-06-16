@@ -259,12 +259,16 @@ object VowValidator {
 
     /**
      * Calculates the Zen Score for a focus session (0-100).
-     * Formula: Zen Score = max(0, 100 - (Intrusions * 10) - (Allowed Screen Time (Min) / Focus Duration (Hr) * 5))
+     * Formula: Zen Score = max(0, 100 - (Pickups * 10) - (fractionOfTimeOnPhone * 50))
      */
-    fun calculateZenScore(intrusions: Int, allowedScreenTimeMs: Long, durationSeconds: Long): Int {
-        val focusDurationHr = durationSeconds / 3600.0
-        val allowedScreenTimeMin = allowedScreenTimeMs / (60.0 * 1000.0)
-        val penalty = (intrusions * 10.0) + (if (focusDurationHr > 0.0) (allowedScreenTimeMin / focusDurationHr) * 5.0 else 0.0)
+    fun calculateZenScore(pickups: Int, allowedScreenTimeMs: Long, durationSeconds: Long): Int {
+        val fractionOfTimeOnPhone = if (durationSeconds > 0L) {
+            val ratio = allowedScreenTimeMs.toDouble() / (durationSeconds * 1000.0)
+            minOf(1.0, maxOf(0.0, ratio))
+        } else {
+            0.0
+        }
+        val penalty = (pickups * 10.0) + (fractionOfTimeOnPhone * 50.0)
         return maxOf(0, minOf(100, kotlin.math.round(100.0 - penalty).toInt()))
     }
 }

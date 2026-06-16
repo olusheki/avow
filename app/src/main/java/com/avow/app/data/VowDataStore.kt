@@ -53,7 +53,7 @@ class VowDataStore(private val context: Context) {
         val TEMPORARY_LOCKOUT_END_TIME = longPreferencesKey("temporary_lockout_end_time")
         val VOW_START_TIME_MS = longPreferencesKey("vow_start_time_ms")
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")
-        val VOW_INTRUSIONS_COUNT = intPreferencesKey("vow_intrusions_count")
+        val VOW_PICKUPS_COUNT = intPreferencesKey("vow_pickups_count")
         val VOW_ALLOWED_SCREEN_TIME_MS = longPreferencesKey("vow_allowed_screen_time_ms")
     }
  
@@ -320,7 +320,7 @@ class VowDataStore(private val context: Context) {
             preferences[VOW_INITIAL_DURATION_SECONDS] = vowInitialDurationSeconds
 
             if (resetStats) {
-                preferences[VOW_INTRUSIONS_COUNT] = 0
+                preferences[VOW_PICKUPS_COUNT] = 0
                 preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
             }
 
@@ -395,14 +395,14 @@ class VowDataStore(private val context: Context) {
             if (isActive) {
                 val startTime = preferences[VOW_START_TIME_MS] ?: 0L
                 val initialDurationSeconds = preferences[VOW_INITIAL_DURATION_SECONDS] ?: 0L
-                val intrusions = preferences[VOW_INTRUSIONS_COUNT] ?: 0
+                val pickups = preferences[VOW_PICKUPS_COUNT] ?: 0
                 val allowedScreenTime = preferences[VOW_ALLOWED_SCREEN_TIME_MS] ?: 0L
                 val endTime = System.currentTimeMillis()
                 
                 // Clamp duration to prevent negative values on clock rollbacks
                 val durationSecs = maxOf(1L, if (initialDurationSeconds > 0) initialDurationSeconds else ((endTime - startTime) / 1000))
                 val zen = VowValidator.calculateZenScore(
-                    intrusions = intrusions,
+                    pickups = pickups,
                     allowedScreenTimeMs = allowedScreenTime,
                     durationSeconds = durationSecs
                 )
@@ -411,7 +411,7 @@ class VowDataStore(private val context: Context) {
                     startTimeMillis = startTime,
                     endTimeMillis = endTime,
                     durationSeconds = durationSecs,
-                    intrusionsBlocked = intrusions,
+                    pickups = pickups,
                     allowedScreenTimeMs = allowedScreenTime,
                     zenScore = zen
                 )
@@ -432,7 +432,7 @@ class VowDataStore(private val context: Context) {
             preferences[DOOMSCROLL_ACCUMULATED_MS] = 0L
             preferences[VOW_START_TIME_MS] = 0L
             preferences[VOW_INITIAL_DURATION_SECONDS] = 0L
-            preferences[VOW_INTRUSIONS_COUNT] = 0
+            preferences[VOW_PICKUPS_COUNT] = 0
             preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
@@ -447,10 +447,10 @@ class VowDataStore(private val context: Context) {
         }
     }
 
-    suspend fun incrementIntrusionsCount() {
+    suspend fun incrementPickupsCount() {
         context.dataStore.edit { preferences ->
-            val current = preferences[VOW_INTRUSIONS_COUNT] ?: 0
-            preferences[VOW_INTRUSIONS_COUNT] = current + 1
+            val current = preferences[VOW_PICKUPS_COUNT] ?: 0
+            preferences[VOW_PICKUPS_COUNT] = current + 1
         }
     }
 
