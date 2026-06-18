@@ -937,7 +937,8 @@ data class RestrictionItem(
     val title: String,
     val detail: String,
     val isChecked: Boolean,
-    val onToggle: () -> Unit
+    val onToggle: () -> Unit,
+    val requiresDeviceOwner: Boolean = false
 )
 
 /**
@@ -970,14 +971,14 @@ fun ConfigurationWorkspace(
     isDeviceOwner: Boolean
 ) {
     val restrictionsList = listOf(
-        RestrictionItem("SAMSUNG KNOX SECURE FOLDER", "com.samsung.knox.securefolder", secureFolderEnabled, onSecureFolderToggle),
-        RestrictionItem("ANDROID 15 PRIVATE SPACE", "com.google.android.apps.privatespace", privateSpaceEnabled, onPrivateSpaceToggle),
-        RestrictionItem("LOCK UNINSTALLATION", "setUninstallBlocked", lockUninstall, onLockUninstallToggle),
-        RestrictionItem("DISALLOW DATA WIPE", "DISALLOW_APPS_CONTROL", disallowDataWipe, onDisallowDataWipeToggle),
-        RestrictionItem("DISABLE SAFE BOOT", "DISALLOW_SAFE_BOOT", disableSafeBoot, onDisableSafeBootToggle),
-        RestrictionItem("BLOCK PLAY STORE", "com.android.vending", blockPlayStore, onBlockPlayStoreToggle),
-        RestrictionItem("DYNAMIC REINSTALL GUARD", "ACTION_PACKAGE_ADDED", dynamicReinstall, onDynamicReinstallToggle),
-        RestrictionItem("DEACTIVATE USB DEBUGGING", "DISALLOW_DEBUGGING_FEATURES", deactivateUsbDebugging, onDeactivateUsbDebuggingToggle)
+        RestrictionItem("SAMSUNG KNOX SECURE FOLDER", "com.samsung.knox.securefolder", secureFolderEnabled, onSecureFolderToggle, requiresDeviceOwner = true),
+        RestrictionItem("ANDROID 15 PRIVATE SPACE", "com.google.android.apps.privatespace", privateSpaceEnabled, onPrivateSpaceToggle, requiresDeviceOwner = true),
+        RestrictionItem("LOCK UNINSTALLATION", "setUninstallBlocked", lockUninstall, onLockUninstallToggle, requiresDeviceOwner = true),
+        RestrictionItem("DISALLOW DATA WIPE", "DISALLOW_APPS_CONTROL", disallowDataWipe, onDisallowDataWipeToggle, requiresDeviceOwner = true),
+        RestrictionItem("DISABLE SAFE BOOT", "DISALLOW_SAFE_BOOT", disableSafeBoot, onDisableSafeBootToggle, requiresDeviceOwner = true),
+        RestrictionItem("BLOCK PLAY STORE", "com.android.vending", blockPlayStore, onBlockPlayStoreToggle, requiresDeviceOwner = true),
+        RestrictionItem("DYNAMIC REINSTALL GUARD", "ACTION_PACKAGE_ADDED", dynamicReinstall, onDynamicReinstallToggle, requiresDeviceOwner = false),
+        RestrictionItem("DEACTIVATE USB DEBUGGING", "DISALLOW_DEBUGGING_FEATURES", deactivateUsbDebugging, onDeactivateUsbDebuggingToggle, requiresDeviceOwner = true)
     )
 
     Column(
@@ -1022,7 +1023,29 @@ fun ConfigurationWorkspace(
                 .background(OutlineAccent)
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        if (!isDeviceOwner) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .background(LockedRed.copy(alpha = 0.1f))
+                    .border(1.dp, LockedRed)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "[!] ADB DEVICE OWNER SETUP MISSING",
+                    color = LockedRed,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        } else {
+            Spacer(modifier = Modifier.height(24.dp))
+        }
 
         // 2. Custom Domain Input Field
         Column(
@@ -1121,16 +1144,17 @@ fun ConfigurationWorkspace(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(restrictionsList) { item ->
+                val isItemEnabled = if (item.requiresDeviceOwner) isDeviceOwner else true
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { item.onToggle() }
+                        .clickable(enabled = isItemEnabled) { item.onToggle() }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (item.isChecked) "[x]" else "[ ]",
-                        color = if (item.isChecked) MonospaceText else SubtextGrey,
+                        color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else if (item.isChecked) MonospaceText else SubtextGrey,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
@@ -1139,14 +1163,14 @@ fun ConfigurationWorkspace(
                     Column {
                         Text(
                             text = item.title,
-                            color = MonospaceText,
+                            color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else MonospaceText,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Normal
                         )
                         Text(
                             text = "(${item.detail})",
-                            color = SubtextGrey,
+                            color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.3f) else SubtextGrey,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 10.sp
                         )
