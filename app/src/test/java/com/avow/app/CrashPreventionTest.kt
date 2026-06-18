@@ -40,34 +40,34 @@ class CrashPreventionTest {
         // Inject active vow fields inside BlockerService using reflection
         val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
         isVowActiveField.isAccessible = true
-        isVowActiveField.set(service, true) // Vow is active
+        isVowActiveField.set(service, true)
 
         val banDomainSetField = BlockerService::class.java.getDeclaredField("banDomainSet")
         banDomainSetField.isAccessible = true
         banDomainSetField.set(service, setOf("instagram.com"))
 
         // WHEN: Calling onAccessibilityEvent which runs URL extraction
-        // THEN: It must not throw any exception to the caller (recovers safely)
+        // THEN: It must not throw any exception to the caller
         try {
             service.onAccessibilityEvent(event)
         } catch (t: Throwable) {
             org.junit.Assert.fail("onAccessibilityEvent threw an uncaught exception: ${t.message}. Soft-brick risk!")
         }
+        
+        // Verify that it logged the error, proving it didn't just silently swallow it without acting
+        verify { Log.e("BlockerService", "Uncaught exception in accessibility event receiver, safely recovered.", any()) }
     }
 
     @Test
     fun testNullPackageNameDoesNotCrash() {
-        // GIVEN: BlockerService with active vow
         val service = BlockerService()
         val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
         isVowActiveField.isAccessible = true
         isVowActiveField.set(service, true)
 
-        // WHEN: event.packageName is null
         val event = mockk<AccessibilityEvent>(relaxed = true)
         every { event.packageName } returns null
 
-        // THEN: It should handle it and exit cleanly without crashing
         try {
             service.onAccessibilityEvent(event)
         } catch (t: Throwable) {
