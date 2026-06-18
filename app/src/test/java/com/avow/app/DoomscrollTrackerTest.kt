@@ -28,6 +28,20 @@ class DoomscrollTrackerTest {
     }
 
     @Test
+    fun testHandleScroll_WarningThreshold_RestrictionActive() {
+        val tracker = DoomscrollTracker()
+        var now = 1000L
+        var result: DoomscrollTracker.TrackingResult = DoomscrollTracker.TrackingResult.None
+        // Scroll every 10 seconds for 5 minutes (300,000 ms)
+        while (now <= 302000L) {
+            result = tracker.handleScroll(now, true)
+            now += 10000L
+        }
+        assertTrue(result is DoomscrollTracker.TrackingResult.TriggerWarning)
+        assertTrue(tracker.warningSent)
+    }
+
+    @Test
     fun testHandleScroll_LockoutThreshold() {
         val tracker = DoomscrollTracker()
         var now = 1000L

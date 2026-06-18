@@ -75,6 +75,15 @@ class BlockerService : AccessibilityService() {
     @Volatile private var specificDomain = ""
     @Volatile private var lastIntervalStartMs = 0L
 
+    @Volatile private var doomscrollShieldEnabled = false
+    @Volatile private var doomscrollAllTime = false
+    @Volatile private var doomscrollStartHour = 23
+    @Volatile private var doomscrollStartMin = 0
+    @Volatile private var doomscrollEndHour = 5
+    @Volatile private var doomscrollEndMin = 0
+    @Volatile private var doomscrollTargetApps = emptySet<String>()
+    @Volatile private var doomscrollCooldownMinutes = 60
+
     @Volatile private var isCollectiveLimit = false
     @Volatile private var packageUsageJsonStr = ""
     private val packageUsageCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -141,6 +150,14 @@ class BlockerService : AccessibilityService() {
                 doomscrollLastClosedTime = prefs[VowDataStore.DOOMSCROLL_LAST_CLOSED_TIME] ?: 0L
                 doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
                 temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
+                doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
+                doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
+                doomscrollStartMin = prefs[VowDataStore.DOOMSCROLL_START_MIN] ?: 0
+                doomscrollEndHour = prefs[VowDataStore.DOOMSCROLL_END_HOUR] ?: 5
+                doomscrollEndMin = prefs[VowDataStore.DOOMSCROLL_END_MIN] ?: 0
+                doomscrollTargetApps = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
+                doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
                 doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
@@ -264,7 +281,9 @@ class BlockerService : AccessibilityService() {
             }
 
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-                handleScrollEvent(pkgName)
+                if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkgName)) {
+                    handleScrollEvent(pkgName)
+                }
             }
 
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -500,6 +519,13 @@ class BlockerService : AccessibilityService() {
         return targetAppSet.contains(pkgName)
     }
 
+    private fun isDoomscrollTargetApp(pkgName: String): Boolean {
+        if (doomscrollTargetApps.contains("All Social Media")) {
+            if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
+        }
+        return doomscrollTargetApps.contains(pkgName)
+    }
+
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {
         if (specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
             val activeUrl = currentBrowserUrl
@@ -511,11 +537,17 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun handleScrollEvent(pkgName: String) {
-        val isNightTime = isCurrentTimeBetween11PMAnd5AM()
-        when (doomscrollTracker.handleScroll(SystemClock.elapsedRealtime(), isNightTime)) {
+        val isRestrictionActive = doomscrollAllTime || isCurrentTimeInQuietHours(
+            doomscrollStartHour,
+            doomscrollStartMin,
+            doomscrollEndHour,
+            doomscrollEndMin
+        )
+        when (doomscrollTracker.handleScroll(SystemClock.elapsedRealtime(), isRestrictionActive)) {
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerLockout -> {
                 serviceScope.launch {
-                    vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + 60L * 60L * 1000L)
+                    val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
+                    vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + cooldownMs)
                     vowDataStore.saveDoomscrollAccumulatedMs(0L)
                 }
                 triggerLockoutOverlay()
@@ -575,7 +607,7 @@ class BlockerService : AccessibilityService() {
         val result = doomscrollTracker.handleForegroundChange(
             oldPkg = oldPkg,
             newPkg = newPkg,
-            isTargetPkg = { isTargetAppPackage(it) },
+            isTargetPkg = { doomscrollShieldEnabled && isDoomscrollTargetApp(it) },
             now = System.currentTimeMillis(),
             lastClosedTime = doomscrollLastClosedTime
         )

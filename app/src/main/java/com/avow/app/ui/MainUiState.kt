@@ -50,6 +50,24 @@ data class MainUiState(
     val frozenQuietHoursTargetAppSet: Set<String> = emptySet(),
     val frozenQuietHoursSpecificDomain: String = "",
 
+    val doomscrollShieldEnabled: Boolean = false,
+    val doomscrollAllTime: Boolean = false,
+    val doomscrollStartHour: Int = 23,
+    val doomscrollStartMin: Int = 0,
+    val doomscrollEndHour: Int = 5,
+    val doomscrollEndMin: Int = 0,
+    val doomscrollTargetAppSet: Set<String> = emptySet(),
+    val doomscrollCooldownMinutes: Int = 60,
+
+    val frozenDoomscrollShieldEnabled: Boolean = false,
+    val frozenDoomscrollAllTime: Boolean = false,
+    val frozenDoomscrollStartHour: Int = 23,
+    val frozenDoomscrollStartMin: Int = 0,
+    val frozenDoomscrollEndHour: Int = 5,
+    val frozenDoomscrollEndMin: Int = 0,
+    val frozenDoomscrollTargetAppSet: Set<String> = emptySet(),
+    val frozenDoomscrollCooldownMinutes: Int = 60,
+
     val vowBlocks: List<VowBlock> = emptyList(),
     val frozenVowBlocks: List<VowBlock> = emptyList(),
     

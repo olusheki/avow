@@ -89,6 +89,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
                 val vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
                 val temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                val doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
+                val doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
+                val doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
+                val doomscrollStartMin = prefs[VowDataStore.DOOMSCROLL_START_MIN] ?: 0
+                val doomscrollEndHour = prefs[VowDataStore.DOOMSCROLL_END_HOUR] ?: 5
+                val doomscrollEndMin = prefs[VowDataStore.DOOMSCROLL_END_MIN] ?: 0
+                val doomscrollTargetAppSet = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
+                val doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
                 
                 var vowBlocks = VowBlock.deserializeList(prefs[VowDataStore.VOW_BLOCKS_JSON] ?: "")
                 if (vowBlocks.isEmpty()) {
@@ -199,6 +207,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         frozenQuietEndMin = quietEndMin,
                         frozenQuietHoursTargetAppSet = quietHoursTargetAppSet,
                         frozenQuietHoursSpecificDomain = quietHoursSpecificDomain,
+                        doomscrollShieldEnabled = doomscrollShieldEnabled,
+                        doomscrollAllTime = doomscrollAllTime,
+                        doomscrollStartHour = doomscrollStartHour,
+                        doomscrollStartMin = doomscrollStartMin,
+                        doomscrollEndHour = doomscrollEndHour,
+                        doomscrollEndMin = doomscrollEndMin,
+                        doomscrollTargetAppSet = doomscrollTargetAppSet,
+                        doomscrollCooldownMinutes = doomscrollCooldownMinutes,
+                        frozenDoomscrollShieldEnabled = doomscrollShieldEnabled,
+                        frozenDoomscrollAllTime = doomscrollAllTime,
+                        frozenDoomscrollStartHour = doomscrollStartHour,
+                        frozenDoomscrollStartMin = doomscrollStartMin,
+                        frozenDoomscrollEndHour = doomscrollEndHour,
+                        frozenDoomscrollEndMin = doomscrollEndMin,
+                        frozenDoomscrollTargetAppSet = doomscrollTargetAppSet,
+                        frozenDoomscrollCooldownMinutes = doomscrollCooldownMinutes,
                         days = days,
                         hours = hours,
                         minutes = minutes,
@@ -327,7 +351,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     vowBlocksJson = VowBlock.serializeList(state.vowBlocks),
                     vowStartTimeMs = state.vowStartTimeMs,
                     vowInitialDurationSeconds = state.vowInitialDurationSeconds,
-                    temporaryLockoutEndTime = state.temporaryLockoutEndTime
+                    temporaryLockoutEndTime = state.temporaryLockoutEndTime,
+                    doomscrollShieldEnabled = state.doomscrollShieldEnabled,
+                    doomscrollAllTime = state.doomscrollAllTime,
+                    doomscrollStartHour = state.doomscrollStartHour,
+                    doomscrollStartMin = state.doomscrollStartMin,
+                    doomscrollEndHour = state.doomscrollEndHour,
+                    doomscrollEndMin = state.doomscrollEndMin,
+                    doomscrollTargetAppSet = state.doomscrollTargetAppSet,
+                    doomscrollCooldownMinutes = state.doomscrollCooldownMinutes
                 )
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to auto-save settings", e)
@@ -434,7 +466,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     frozenQuietEndMin = quietEndMin,
                     frozenQuietHoursTargetAppSet = quietHoursTargetAppSet,
                     frozenQuietHoursSpecificDomain = quietHoursSpecificDomain,
-                    frozenVowBlocks = vowBlocks
+                    frozenVowBlocks = vowBlocks,
+                    frozenDoomscrollShieldEnabled = doomscrollShieldEnabled,
+                    frozenDoomscrollAllTime = doomscrollAllTime,
+                    frozenDoomscrollStartHour = doomscrollStartHour,
+                    frozenDoomscrollStartMin = doomscrollStartMin,
+                    frozenDoomscrollEndHour = doomscrollEndHour,
+                    frozenDoomscrollEndMin = doomscrollEndMin,
+                    frozenDoomscrollTargetAppSet = doomscrollTargetAppSet,
+                    frozenDoomscrollCooldownMinutes = doomscrollCooldownMinutes
                 ) 
             }
             saveConfigToDataStore()

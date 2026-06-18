@@ -12,7 +12,7 @@ class DoomscrollTracker {
         object TriggerLockout : TrackingResult()
     }
 
-    fun handleScroll(now: Long, isNightTime: Boolean): TrackingResult {
+    fun handleScroll(now: Long, isRestrictionActive: Boolean): TrackingResult {
         if (lastScrollTimeMs == 0L || now - lastScrollTimeMs > 30000L) {
             if (currentSessionStartMs > 0L && lastScrollTimeMs >= currentSessionStartMs) {
                 accumulatedMs += (lastScrollTimeMs - currentSessionStartMs)
@@ -24,7 +24,7 @@ class DoomscrollTracker {
         val currentSessionDuration = now - currentSessionStartMs
         val totalAccumulated = accumulatedMs + currentSessionDuration
 
-        val limitMs = if (isNightTime) 5L * 60L * 1000L else 15L * 60L * 1000L
+        val limitMs = if (isRestrictionActive) 5L * 60L * 1000L else 15L * 60L * 1000L
         val warningThresholdMs = limitMs
         val lockoutThresholdMs = limitMs + 15L * 60L * 1000L
 

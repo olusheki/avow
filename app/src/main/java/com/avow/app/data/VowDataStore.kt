@@ -55,6 +55,14 @@ class VowDataStore(private val context: Context) {
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")
         val VOW_PICKUPS_COUNT = intPreferencesKey("vow_pickups_count")
         val VOW_ALLOWED_SCREEN_TIME_MS = longPreferencesKey("vow_allowed_screen_time_ms")
+        val DOOMSCROLL_SHIELD_ENABLED = booleanPreferencesKey("doomscroll_shield_enabled")
+        val DOOMSCROLL_ALL_TIME = booleanPreferencesKey("doomscroll_all_time")
+        val DOOMSCROLL_START_HOUR = intPreferencesKey("doomscroll_start_hour")
+        val DOOMSCROLL_START_MIN = intPreferencesKey("doomscroll_start_min")
+        val DOOMSCROLL_END_HOUR = intPreferencesKey("doomscroll_end_hour")
+        val DOOMSCROLL_END_MIN = intPreferencesKey("doomscroll_end_min")
+        val DOOMSCROLL_TARGET_APP_SET = stringSetPreferencesKey("doomscroll_target_app_set")
+        val DOOMSCROLL_COOLDOWN_MINUTES = intPreferencesKey("doomscroll_cooldown_minutes")
     }
  
     /**
@@ -95,6 +103,14 @@ class VowDataStore(private val context: Context) {
         val temporaryLockoutEndTime = prefs[TEMPORARY_LOCKOUT_END_TIME] ?: 0L
         val vowStartTimeMs = prefs[VOW_START_TIME_MS] ?: 0L
         val vowInitialDurationSeconds = prefs[VOW_INITIAL_DURATION_SECONDS] ?: 0L
+        val doomscrollShieldEnabled = prefs[DOOMSCROLL_SHIELD_ENABLED] ?: false
+        val doomscrollAllTime = prefs[DOOMSCROLL_ALL_TIME] ?: false
+        val doomscrollStartHour = prefs[DOOMSCROLL_START_HOUR] ?: 23
+        val doomscrollStartMin = prefs[DOOMSCROLL_START_MIN] ?: 0
+        val doomscrollEndHour = prefs[DOOMSCROLL_END_HOUR] ?: 5
+        val doomscrollEndMin = prefs[DOOMSCROLL_END_MIN] ?: 0
+        val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
+        val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
 
         return VowValidator.computeHMACSignature(
             isVowActive = isActive,
@@ -128,7 +144,15 @@ class VowDataStore(private val context: Context) {
             vowBlocksJson = vowBlocksJson,
             temporaryLockoutEndTime = temporaryLockoutEndTime,
             vowStartTimeMs = vowStartTimeMs,
-            vowInitialDurationSeconds = vowInitialDurationSeconds
+            vowInitialDurationSeconds = vowInitialDurationSeconds,
+            doomscrollShieldEnabled = doomscrollShieldEnabled,
+            doomscrollAllTime = doomscrollAllTime,
+            doomscrollStartHour = doomscrollStartHour,
+            doomscrollStartMin = doomscrollStartMin,
+            doomscrollEndHour = doomscrollEndHour,
+            doomscrollEndMin = doomscrollEndMin,
+            doomscrollTargetAppSet = doomscrollTargetAppSet,
+            doomscrollCooldownMinutes = doomscrollCooldownMinutes
         )
     }
 
@@ -171,6 +195,14 @@ class VowDataStore(private val context: Context) {
         val temporaryLockoutEndTime = prefs[TEMPORARY_LOCKOUT_END_TIME] ?: 0L
         val vowStartTimeMs = prefs[VOW_START_TIME_MS] ?: 0L
         val vowInitialDurationSeconds = prefs[VOW_INITIAL_DURATION_SECONDS] ?: 0L
+        val doomscrollShieldEnabled = prefs[DOOMSCROLL_SHIELD_ENABLED] ?: false
+        val doomscrollAllTime = prefs[DOOMSCROLL_ALL_TIME] ?: false
+        val doomscrollStartHour = prefs[DOOMSCROLL_START_HOUR] ?: 23
+        val doomscrollStartMin = prefs[DOOMSCROLL_START_MIN] ?: 0
+        val doomscrollEndHour = prefs[DOOMSCROLL_END_HOUR] ?: 5
+        val doomscrollEndMin = prefs[DOOMSCROLL_END_MIN] ?: 0
+        val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
+        val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
 
         if (storedSig == null) {
             val hasNonDefault = isActive ||
@@ -204,7 +236,15 @@ class VowDataStore(private val context: Context) {
                     vowBlocksJson != "" ||
                     temporaryLockoutEndTime != 0L ||
                     vowStartTimeMs != 0L ||
-                    vowInitialDurationSeconds != 0L
+                    vowInitialDurationSeconds != 0L ||
+                    doomscrollShieldEnabled ||
+                    doomscrollAllTime ||
+                    doomscrollStartHour != 23 ||
+                    doomscrollStartMin != 0 ||
+                    doomscrollEndHour != 5 ||
+                    doomscrollEndMin != 0 ||
+                    doomscrollTargetAppSet.isNotEmpty() ||
+                    doomscrollCooldownMinutes != 60
             return !hasNonDefault
         }
         
@@ -283,6 +323,14 @@ class VowDataStore(private val context: Context) {
         temporaryLockoutEndTime: Long = 0L,
         vowStartTimeMs: Long = 0L,
         vowInitialDurationSeconds: Long = 0L,
+        doomscrollShieldEnabled: Boolean = false,
+        doomscrollAllTime: Boolean = false,
+        doomscrollStartHour: Int = 23,
+        doomscrollStartMin: Int = 0,
+        doomscrollEndHour: Int = 5,
+        doomscrollEndMin: Int = 0,
+        doomscrollTargetAppSet: Set<String> = emptySet(),
+        doomscrollCooldownMinutes: Int = 60,
         resetStats: Boolean = false
     ) {
         context.dataStore.edit { preferences ->
@@ -318,6 +366,14 @@ class VowDataStore(private val context: Context) {
             preferences[TEMPORARY_LOCKOUT_END_TIME] = temporaryLockoutEndTime
             preferences[VOW_START_TIME_MS] = vowStartTimeMs
             preferences[VOW_INITIAL_DURATION_SECONDS] = vowInitialDurationSeconds
+            preferences[DOOMSCROLL_SHIELD_ENABLED] = doomscrollShieldEnabled
+            preferences[DOOMSCROLL_ALL_TIME] = doomscrollAllTime
+            preferences[DOOMSCROLL_START_HOUR] = doomscrollStartHour
+            preferences[DOOMSCROLL_START_MIN] = doomscrollStartMin
+            preferences[DOOMSCROLL_END_HOUR] = doomscrollEndHour
+            preferences[DOOMSCROLL_END_MIN] = doomscrollEndMin
+            preferences[DOOMSCROLL_TARGET_APP_SET] = doomscrollTargetAppSet
+            preferences[DOOMSCROLL_COOLDOWN_MINUTES] = doomscrollCooldownMinutes
 
             if (resetStats) {
                 preferences[VOW_PICKUPS_COUNT] = 0
@@ -434,6 +490,14 @@ class VowDataStore(private val context: Context) {
             preferences[VOW_INITIAL_DURATION_SECONDS] = 0L
             preferences[VOW_PICKUPS_COUNT] = 0
             preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
+            preferences[DOOMSCROLL_SHIELD_ENABLED] = false
+            preferences[DOOMSCROLL_ALL_TIME] = false
+            preferences[DOOMSCROLL_START_HOUR] = 23
+            preferences[DOOMSCROLL_START_MIN] = 0
+            preferences[DOOMSCROLL_END_HOUR] = 5
+            preferences[DOOMSCROLL_END_MIN] = 0
+            preferences[DOOMSCROLL_TARGET_APP_SET] = emptySet()
+            preferences[DOOMSCROLL_COOLDOWN_MINUTES] = 60
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }

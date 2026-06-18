@@ -134,15 +134,25 @@ object VowValidator {
         vowBlocksJson: String = "",
         temporaryLockoutEndTime: Long = 0L,
         vowStartTimeMs: Long = 0L,
-        vowInitialDurationSeconds: Long = 0L
+        vowInitialDurationSeconds: Long = 0L,
+        doomscrollShieldEnabled: Boolean = false,
+        doomscrollAllTime: Boolean = false,
+        doomscrollStartHour: Int = 23,
+        doomscrollStartMin: Int = 0,
+        doomscrollEndHour: Int = 5,
+        doomscrollEndMin: Int = 0,
+        doomscrollTargetAppSet: Set<String> = emptySet(),
+        doomscrollCooldownMinutes: Int = 60
     ): String {
         val sortedDomains = banDomainSet.sorted().joinToString(",")
         val sortedApps = targetAppSet.sorted().joinToString(",")
         val sortedQuietHoursApps = quietHoursTargetAppSet.sorted().joinToString(",")
+        val sortedDoomscrollApps = doomscrollTargetAppSet.sorted().joinToString(",")
         val input = "$isVowActive|$isActiveVowMode|$remainingSeconds|$lastUptimeMillis|$sortedDomains|$sortedApps|$deactivationRequestTime|" +
                 "$secureFolderEnabled|$privateSpaceEnabled|$lockUninstall|$disallowDataWipe|$disableSafeBoot|$blockPlayStore|$dynamicReinstall|" +
                 "$deactivateUsbDebugging|$quietHoursEnabled|$quietStartHour|$quietStartMin|$quietEndHour|$quietEndMin|$sortedQuietHoursApps|" +
-                "$quietHoursSpecificDomain|$usageLimitsUpdated|$allowedValue|$allowedUnit|$selectedInterval|$specificDomain|$isCollectiveLimit|$vowBlocksJson|$temporaryLockoutEndTime|$vowStartTimeMs|$vowInitialDurationSeconds"
+                "$quietHoursSpecificDomain|$usageLimitsUpdated|$allowedValue|$allowedUnit|$selectedInterval|$specificDomain|$isCollectiveLimit|$vowBlocksJson|$temporaryLockoutEndTime|$vowStartTimeMs|$vowInitialDurationSeconds|" +
+                "$doomscrollShieldEnabled|$doomscrollAllTime|$doomscrollStartHour|$doomscrollStartMin|$doomscrollEndHour|$doomscrollEndMin|$sortedDoomscrollApps|$doomscrollCooldownMinutes"
         
         val secretKey = getOrCreateSecretKey()
         val mac = Mac.getInstance("HmacSHA256")
