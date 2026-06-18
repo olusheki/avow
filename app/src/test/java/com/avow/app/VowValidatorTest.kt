@@ -8,7 +8,7 @@ class VowValidatorTest {
     @Test
     fun testCalculateRemainingSeconds_NormalTick() {
         val remaining = VowValidator.calculateRemainingSeconds(
-            currentRemainingSeconds = 3600,
+            savedRemainingSeconds = 3600,
             lastUptimeMillis = 10000,
             currentUptimeMillis = 15000
         )
@@ -18,7 +18,7 @@ class VowValidatorTest {
     @Test
     fun testCalculateRemainingSeconds_NegativeBounds() {
         val remaining = VowValidator.calculateRemainingSeconds(
-            currentRemainingSeconds = 5,
+            savedRemainingSeconds = 5,
             lastUptimeMillis = 10000,
             currentUptimeMillis = 20000
         )
@@ -29,7 +29,7 @@ class VowValidatorTest {
     fun testCalculateRemainingSeconds_RebootDetection() {
         // Reboot means currentUptime < lastUptime
         val remaining = VowValidator.calculateRemainingSeconds(
-            currentRemainingSeconds = 3600,
+            savedRemainingSeconds = 3600,
             lastUptimeMillis = 500000,
             currentUptimeMillis = 10000
         )
@@ -41,7 +41,7 @@ class VowValidatorTest {
     fun testCalculateRemainingSeconds_TimeTravelDetection() {
         // If currentUptime == lastUptime but it's called, elapsed = 0
         val remaining = VowValidator.calculateRemainingSeconds(
-            currentRemainingSeconds = 3600,
+            savedRemainingSeconds = 3600,
             lastUptimeMillis = 10000,
             currentUptimeMillis = 10000
         )
