@@ -256,7 +256,7 @@ class BlockerService : AccessibilityService() {
             }
 
             // Intercept any attempt to launch target apps during temporary lockout
-            if (System.currentTimeMillis() < temporaryLockoutEndTime) {
+            if (SystemClock.elapsedRealtime() < temporaryLockoutEndTime) {
                 if (isTargetAppPackage(pkgName) || isBrowserWithSpecificDomain(pkgName)) {
                     triggerLockoutOverlay()
                     return
@@ -512,10 +512,10 @@ class BlockerService : AccessibilityService() {
 
     private fun handleScrollEvent(pkgName: String) {
         val isNightTime = isCurrentTimeBetween11PMAnd5AM()
-        when (doomscrollTracker.handleScroll(System.currentTimeMillis(), isNightTime)) {
+        when (doomscrollTracker.handleScroll(SystemClock.elapsedRealtime(), isNightTime)) {
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerLockout -> {
                 serviceScope.launch {
-                    vowDataStore.saveTemporaryLockoutEndTime(System.currentTimeMillis() + 60L * 60L * 1000L)
+                    vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + 60L * 60L * 1000L)
                     vowDataStore.saveDoomscrollAccumulatedMs(0L)
                 }
                 triggerLockoutOverlay()
