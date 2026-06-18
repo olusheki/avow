@@ -85,6 +85,7 @@ class BlockerService : AccessibilityService() {
     @Volatile private var ticksSinceLastFlush = 0
 
     @Volatile private var currentForegroundPackage = ""
+    @Volatile private var currentBrowserUrl = ""
     @Volatile private var vowBlocks = emptyList<VowBlock>()
     private lateinit var vowDataStore: VowDataStore
 
@@ -199,30 +200,23 @@ class BlockerService : AccessibilityService() {
         if (isTargetAppPackage(packageName)) return false
         
         if (packageName == "com.android.chrome" || packageName == "com.sec.android.app.sbrowser") {
-            val rootNode = rootInActiveWindow
-            if (rootNode != null) {
-                try {
-                    val activeUrl = extractUrlOptimized(rootNode, packageName)
-                    if (activeUrl.isNotEmpty()) {
-                        val isBanned = banDomainSet.any { domain ->
-                            activeUrl.contains(domain, ignoreCase = true)
-                        }
-                        if (isBanned) return false
-                        
-                        if (specificDomain.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
-                            return false
-                        }
-                        
-                        for (block in vowBlocks) {
-                            if (block.isEnabled && block.specificDomain.isNotEmpty() && 
-                                isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin) && 
-                                activeUrl.contains(block.specificDomain, ignoreCase = true)) {
-                                return false
-                            }
-                        }
+            val activeUrl = currentBrowserUrl
+            if (activeUrl.isNotEmpty()) {
+                val isBanned = banDomainSet.any { domain ->
+                    activeUrl.contains(domain, ignoreCase = true)
+                }
+                if (isBanned) return false
+                
+                if (specificDomain.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
+                    return false
+                }
+                
+                for (block in vowBlocks) {
+                    if (block.isEnabled && block.specificDomain.isNotEmpty() && 
+                        isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin) && 
+                        activeUrl.contains(block.specificDomain, ignoreCase = true)) {
+                        return false
                     }
-                } finally {
-                    rootNode.recycle()
                 }
             }
         }
@@ -317,6 +311,7 @@ class BlockerService : AccessibilityService() {
                         }
 
                         val activeUrl = extractUrlOptimized(rootNode, pkgName)
+                        currentBrowserUrl = activeUrl
                         if (activeUrl.isNotEmpty()) {
                             val isBanned = banDomainSet.any { domain ->
                                 activeUrl.contains(domain, ignoreCase = true)
@@ -348,17 +343,10 @@ class BlockerService : AccessibilityService() {
                         return
                     }
                     if (block.specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
-                        val rootNode = rootInActiveWindow
-                        if (rootNode != null) {
-                            try {
-                                val activeUrl = extractUrlOptimized(rootNode, pkgName)
-                                if (activeUrl.isNotEmpty() && activeUrl.contains(block.specificDomain, ignoreCase = true)) {
-                                    triggerBlackoutOverlay()
-                                    return
-                                }
-                            } finally {
-                                rootNode.recycle()
-                            }
+                        val activeUrl = currentBrowserUrl
+                        if (activeUrl.isNotEmpty() && activeUrl.contains(block.specificDomain, ignoreCase = true)) {
+                            triggerBlackoutOverlay()
+                            return
                         }
                     }
                 }
@@ -514,16 +502,9 @@ class BlockerService : AccessibilityService() {
 
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {
         if (specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
-            val rootNode = rootInActiveWindow
-            if (rootNode != null) {
-                try {
-                    val activeUrl = extractUrlOptimized(rootNode, pkgName)
-                    if (activeUrl.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
-                        return true
-                    }
-                } finally {
-                    rootNode.recycle()
-                }
+            val activeUrl = currentBrowserUrl
+            if (activeUrl.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
+                return true
             }
         }
         return false
