@@ -16,9 +16,13 @@ class DoomscrollTrackerTest {
     @Test
     fun testHandleScroll_WarningThreshold() {
         val tracker = DoomscrollTracker()
-        tracker.handleScroll(1000L, false)
-        // Move time by 15 mins (900,000 ms)
-        val result = tracker.handleScroll(901000L, false)
+        var now = 1000L
+        var result: DoomscrollTracker.TrackingResult = DoomscrollTracker.TrackingResult.None
+        // Scroll every 10 seconds for 15 minutes (900,000 ms)
+        while (now <= 902000L) {
+            result = tracker.handleScroll(now, false)
+            now += 10000L
+        }
         assertTrue(result is DoomscrollTracker.TrackingResult.TriggerWarning)
         assertTrue(tracker.warningSent)
     }
@@ -26,12 +30,15 @@ class DoomscrollTrackerTest {
     @Test
     fun testHandleScroll_LockoutThreshold() {
         val tracker = DoomscrollTracker()
-        tracker.handleScroll(1000L, false)
-        tracker.handleScroll(901000L, false) // Warning
-        // Move time to 30 mins (1,800,000 ms)
-        val result = tracker.handleScroll(1801000L, false)
+        var now = 1000L
+        var result: DoomscrollTracker.TrackingResult = DoomscrollTracker.TrackingResult.None
+        // Scroll every 10 seconds for 30 minutes (1,800,000 ms)
+        while (now <= 1802000L) {
+            result = tracker.handleScroll(now, false)
+            now += 10000L
+        }
         assertTrue(result is DoomscrollTracker.TrackingResult.TriggerLockout)
-        assertEquals(0L, tracker.accumulatedMs) // Reset after lockout
+        assertEquals(0L, tracker.accumulatedMs)
     }
 
     @Test
