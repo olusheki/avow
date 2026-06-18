@@ -10,11 +10,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import com.avow.app.ui.MainScreen
 import com.avow.app.ui.theme.AVowTheme
+import androidx.activity.viewModels
+import com.avow.app.ui.MainViewModel
 
 class MainActivity : ComponentActivity() {
     private val triggerIntrusionState = mutableStateOf(false)
     private val preload15mVowState = mutableStateOf(false)
     private val isTemporaryLockoutState = mutableStateOf(false)
+    private val mainViewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +27,7 @@ class MainActivity : ComponentActivity() {
             AVowTheme {
                 MainScreen(
                     modifier = Modifier.fillMaxSize(),
+                    viewModel = mainViewModel,
                     triggerIntrusion = triggerIntrusionState.value,
                     onIntrusionHandled = { triggerIntrusionState.value = false },
                     preload15mVow = preload15mVowState.value,

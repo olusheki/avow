@@ -62,18 +62,10 @@ import androidx.compose.ui.draw.alpha
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-
-/**
- * Screen states representing the different visual layout configurations.
- */
-enum class ScreenState {
-    UNLOCKED_VAULT,       // Dashboard with "UNLOCKED" state
-    LOCKED_VAULT,         // Dashboard with "LOCKED" countdown active
-    CONFIGURATION,        // Scrollable packages/domain setup workspace
-    INTRUSION_INTERCEPT,  // Flat graphite gray background with centered smiley
-    TEMPORARY_LOCKOUT,    // Inescapable straight face lockout overlay
-    FOCUS_HISTORY         // Focus session logging and analytics
-}
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 
 // Slightly darker gray color for activated panels
 val DarkerSurfaceColor = Color(0xFF5A5A5A)
@@ -82,6 +74,7 @@ val DarkerSurfaceColor = Color(0xFF5A5A5A)
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
+    viewModel: MainViewModel,
     triggerIntrusion: Boolean = false,
     onIntrusionHandled: () -> Unit = {},
     preload15mVow: Boolean = false,
@@ -89,109 +82,15 @@ fun MainScreen(
     isTemporaryLockout: Boolean = false,
     onTemporaryLockoutHandled: () -> Unit = {}
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val vowDataStore = remember { VowDataStore(context) }
-    var currentState by remember { mutableStateOf(ScreenState.UNLOCKED_VAULT) }
-    var previousState by remember { mutableStateOf(ScreenState.UNLOCKED_VAULT) }
-    
-    // Vow Lock Active State (Source of truth for timer countdown)
-    var isVowActive by remember { mutableStateOf(false) }
-    var isActiveVowMode by remember { mutableStateOf(false) }
-    var deactivationRequestTime by remember { mutableStateOf(0L) }
-    var temporaryLockoutEndTime by remember { mutableStateOf(0L) }
-    
-    // Ticker to trigger recompositions for the cooling-off button countdown
-    var tickTrigger by remember { mutableStateOf(0) }
-    LaunchedEffect(deactivationRequestTime) {
-        if (deactivationRequestTime > 0L) {
-            while (true) {
-                delay(1000L)
-                tickTrigger++
-            }
-        }
-    }
-    
-    // In-app Toast Banner State
-    var inAppToastMessage by remember { mutableStateOf<String?>(null) }
-    val showToast: (String) -> Unit = { inAppToastMessage = it }
-    
-    // Auto-dismiss toast
-    LaunchedEffect(inAppToastMessage) {
-        if (inAppToastMessage != null) {
-            delay(3000L)
-            inAppToastMessage = null
-        }
-    }
-    
-    // Query downloaded applications using PackageManager
-    val installedApps = remember(context) {
-        val pm = context.packageManager
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
-        val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
-        val list = resolveInfos.map {
-            val packageName = it.activityInfo.packageName
-            val label = it.loadLabel(pm).toString()
-            packageName to label
-        }.distinctBy { it.first }.sortedBy { it.second }
-        
-        if (list.isEmpty()) {
-            listOf(
-                "com.instagram.android" to "Instagram",
-                "com.sec.android.app.sbrowser" to "Samsung Internet",
-                "com.android.chrome" to "Chrome",
-                "com.facebook.katana" to "Facebook",
-                "com.twitter.android" to "X / Twitter",
-                "com.tiktok.android" to "TikTok",
-                "com.youtube.android" to "YouTube"
-            )
-        } else {
-            list
-        }
-    }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
-    // Usage Limit Config States
-    var showUsageLimitsDialog by remember { mutableStateOf(false) }
-    var usageLimitsUpdated by remember { mutableStateOf(false) }
-    
-    var allowedValue by remember { mutableStateOf("5") }
-    var allowedUnit by remember { mutableStateOf("min") }
-    var selectedInterval by remember { mutableStateOf("hour") }
-    var targetAppSet by remember { mutableStateOf(emptySet<String>()) }
-    var specificDomain by remember { mutableStateOf("") }
-    var isCollectiveLimit by remember { mutableStateOf(false) }
-    
-    // Frozen states for stricter-only validation when locked
-    var frozenAllowedValue by remember { mutableStateOf("5") }
-    var frozenAllowedUnit by remember { mutableStateOf("min") }
-    var frozenInterval by remember { mutableStateOf("hour") }
-    
-    // Quiet Hours Dialog State
+    // Dialog states (kept in Composable as they are pure UI states)
     var showQuietHoursDialog by remember { mutableStateOf(false) }
-    var quietHoursEnabled by remember { mutableStateOf(false) }
-    var quietStartHour by remember { mutableStateOf(22) }
-    var quietStartMin by remember { mutableStateOf(0) }
-    var quietEndHour by remember { mutableStateOf(7) }
-    var quietEndMin by remember { mutableStateOf(0) }
-    var quietHoursTargetAppSet by remember { mutableStateOf(emptySet<String>()) }
-    var quietHoursSpecificDomain by remember { mutableStateOf("") }
-    
-    // Frozen Quiet Hours
-    var frozenQuietHoursEnabled by remember { mutableStateOf(false) }
-    var frozenQuietStartHour by remember { mutableStateOf(22) }
-    var frozenQuietStartMin by remember { mutableStateOf(0) }
-    var frozenQuietEndHour by remember { mutableStateOf(7) }
-    var frozenQuietEndMin by remember { mutableStateOf(0) }
-    var frozenQuietHoursTargetAppSet by remember { mutableStateOf(emptySet<String>()) }
-    var frozenQuietHoursSpecificDomain by remember { mutableStateOf("") }
-    
-    // Custom Scheduled Blocks
-    var vowBlocks by remember { mutableStateOf(listOf<VowBlock>()) }
-    var frozenVowBlocks by remember { mutableStateOf(listOf<VowBlock>()) }
-    
-    // Binding Vow Dialog State
+    var showUsageLimitsDialog by remember { mutableStateOf(false) }
     var showBindingVowDialog by remember { mutableStateOf(false) }
+
     var initialDaysForDialog by remember { mutableStateOf("00") }
     var initialHoursForDialog by remember { mutableStateOf("00") }
     var initialMinutesForDialog by remember { mutableStateOf("00") }
@@ -210,307 +109,15 @@ fun MainScreen(
 
     LaunchedEffect(isTemporaryLockout) {
         if (isTemporaryLockout) {
-            previousState = currentState
-            currentState = ScreenState.TEMPORARY_LOCKOUT
+            viewModel.setScreenState(ScreenState.TEMPORARY_LOCKOUT)
             onTemporaryLockoutHandled()
         }
     }
 
-    // Auto-exit temporary lockout when time has elapsed
-    LaunchedEffect(currentState) {
-        if (currentState == ScreenState.TEMPORARY_LOCKOUT) {
-            while (true) {
-                delay(1000L)
-                val prefs = vowDataStore.preferencesFlow.first()
-                val endTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
-                temporaryLockoutEndTime = endTime
-                if (System.currentTimeMillis() >= endTime) {
-                    currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
-                    break
-                }
-            }
-        }
-    }
-    
-    // Target Profiles / Apps (Samsung Secure Folder, Android 15 Private Space)
-    var secureFolderEnabled by remember { mutableStateOf(false) } // Default unselected
-    var privateSpaceEnabled by remember { mutableStateOf(false) }  // Default unselected
-
-    // Enforcement Restrictions States (Settings Workspace)
-    var lockUninstall by remember { mutableStateOf(false) } // Default unselected
-    var disallowDataWipe by remember { mutableStateOf(false) } // Default unselected
-    var disableSafeBoot by remember { mutableStateOf(false) } // Default unselected
-    var blockPlayStore by remember { mutableStateOf(false) } // Default unselected
-    var dynamicReinstall by remember { mutableStateOf(false) } // Default unselected
-    var deactivateUsbDebugging by remember { mutableStateOf(false) } // Default unselected
-
-    var banDomainSet by remember { mutableStateOf(setOf("instagram.com")) }
-
-    // Countdown Clock State
-    var days by remember { mutableStateOf(0) }
-    var hours by remember { mutableStateOf(0) }
-    var minutes by remember { mutableStateOf(0) }
-    var seconds by remember { mutableStateOf(0) }
-
-    var vowStartTimeMs by remember { mutableStateOf(0L) }
-    var vowInitialDurationSeconds by remember { mutableStateOf(0L) }
-
-    val scope = rememberCoroutineScope()
-    var isLoaded by remember { mutableStateOf(false) }
-
-    // Handle incoming intrusion trigger
     LaunchedEffect(triggerIntrusion) {
         if (triggerIntrusion) {
-            previousState = currentState
-            currentState = ScreenState.INTRUSION_INTERCEPT
+            viewModel.setScreenState(ScreenState.INTRUSION_INTERCEPT)
             onIntrusionHandled()
-        }
-    }
-
-    // Load DataStore configurations and verify countdown timer with reboot detection on startup
-    LaunchedEffect(Unit) {
-        try {
-            val prefs = vowDataStore.preferencesFlow.first()
-            isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
-            isActiveVowMode = prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false
-            deactivationRequestTime = prefs[VowDataStore.DEACTIVATION_REQUEST_TIME] ?: 0L
-            banDomainSet = prefs[VowDataStore.BAN_DOMAIN_SET] ?: setOf("instagram.com")
-            secureFolderEnabled = prefs[VowDataStore.SECURE_FOLDER_ENABLED] ?: false
-            privateSpaceEnabled = prefs[VowDataStore.PRIVATE_SPACE_ENABLED] ?: false
-            lockUninstall = prefs[VowDataStore.LOCK_UNINSTALL] ?: false
-            disallowDataWipe = prefs[VowDataStore.DISALLOW_DATA_WIPE] ?: false
-            disableSafeBoot = prefs[VowDataStore.DISABLE_SAFE_BOOT] ?: false
-            blockPlayStore = prefs[VowDataStore.BLOCK_PLAY_STORE] ?: false
-            dynamicReinstall = prefs[VowDataStore.DYNAMIC_REINSTALL] ?: false
-            deactivateUsbDebugging = prefs[VowDataStore.DEACTIVATE_USB_DEBUGGING] ?: false
-            quietHoursEnabled = prefs[VowDataStore.QUIET_HOURS_ENABLED] ?: false
-            quietStartHour = prefs[VowDataStore.QUIET_START_HOUR] ?: 22
-            quietStartMin = prefs[VowDataStore.QUIET_START_MIN] ?: 0
-            quietEndHour = prefs[VowDataStore.QUIET_END_HOUR] ?: 7
-            quietEndMin = prefs[VowDataStore.QUIET_END_MIN] ?: 0
-            quietHoursTargetAppSet = prefs[VowDataStore.QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
-            quietHoursSpecificDomain = prefs[VowDataStore.QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
-            vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
-            vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
-            temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
-            
-            val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
-            vowBlocks = VowBlock.deserializeList(blocksJson)
-            if (vowBlocks.isEmpty()) {
-                vowBlocks = listOf(
-                    VowBlock(
-                        id = java.util.UUID.randomUUID().toString(),
-                        name = "Quiet Hours",
-                        isEnabled = quietHoursEnabled,
-                        startHour = quietStartHour,
-                        startMin = quietStartMin,
-                        endHour = quietEndHour,
-                        endMin = quietEndMin,
-                        targetApps = quietHoursTargetAppSet,
-                        specificDomain = quietHoursSpecificDomain
-                    )
-                )
-            }
-            frozenVowBlocks = vowBlocks
-            
-            usageLimitsUpdated = prefs[VowDataStore.USAGE_LIMITS_UPDATED] ?: false
-            allowedValue = prefs[VowDataStore.ALLOWED_VALUE] ?: "5"
-            allowedUnit = prefs[VowDataStore.ALLOWED_UNIT] ?: "min"
-            selectedInterval = prefs[VowDataStore.SELECTED_INTERVAL] ?: "hour"
-            targetAppSet = prefs[VowDataStore.TARGET_APP_SET] ?: emptySet()
-            specificDomain = prefs[VowDataStore.SPECIFIC_DOMAIN] ?: ""
-            isCollectiveLimit = prefs[VowDataStore.IS_COLLECTIVE_LIMIT] ?: false
-
-            // Sync frozen states on load
-            frozenAllowedValue = allowedValue
-            frozenAllowedUnit = allowedUnit
-            frozenInterval = selectedInterval
-            frozenQuietHoursEnabled = quietHoursEnabled
-            frozenQuietStartHour = quietStartHour
-            frozenQuietStartMin = quietStartMin
-            frozenQuietEndHour = quietEndHour
-            frozenQuietEndMin = quietEndMin
-            frozenQuietHoursTargetAppSet = quietHoursTargetAppSet
-            frozenQuietHoursSpecificDomain = quietHoursSpecificDomain
-            
-            // Resume timer if active
-            val savedRemaining = prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L
-            if (isVowActive) {
-                val lastUptime = prefs[VowDataStore.LAST_SYSTEM_UPTIME_MILLIS] ?: 0L
-                val currentUptime = SystemClock.elapsedRealtime()
-                
-                val finalRemaining = if (savedRemaining > 0) {
-                    com.avow.app.util.VowValidator.calculateRemainingSeconds(
-                        currentUptimeMillis = currentUptime,
-                        lastUptimeMillis = lastUptime,
-                        savedRemainingSeconds = savedRemaining
-                    )
-                } else {
-                    0L
-                }
-                
-                if (finalRemaining > 0) {
-                    days = (finalRemaining / 86400).toInt()
-                    hours = ((finalRemaining % 86400) / 3600).toInt()
-                    minutes = ((finalRemaining % 3600) / 60).toInt()
-                    seconds = (finalRemaining % 60).toInt()
-                    currentState = ScreenState.LOCKED_VAULT
-                    isLoaded = true
-                } else {
-                    // Expired while closed or savedRemaining <= 0
-                    isVowActive = false
-                    isActiveVowMode = false
-                    currentState = ScreenState.UNLOCKED_VAULT
-                    DeviceAdmin.assertBindingVow(
-                        context = context,
-                        activate = false,
-                        secureFolderEnabled = secureFolderEnabled,
-                        privateSpaceEnabled = privateSpaceEnabled,
-                        lockUninstall = lockUninstall,
-                        disallowDataWipe = disallowDataWipe,
-                        disableSafeBoot = disableSafeBoot,
-                        blockPlayStore = blockPlayStore,
-                        deactivateUsbDebugging = deactivateUsbDebugging
-                    )
-                    scope.launch {
-                        vowDataStore.clearVowConfig()
-                        isCollectiveLimit = false
-                        // Reset Compose memory state variables
-                        vowStartTimeMs = 0L
-                        vowInitialDurationSeconds = 0L
-                        days = 0
-                        hours = 0
-                        minutes = 0
-                        seconds = 0
-                        isLoaded = true
-                    }
-                }
-            } else {
-                isLoaded = true
-            }
-        } catch (e: Exception) {
-            Log.e("MainScreen", "Failed to load DataStore settings", e)
-            isLoaded = true
-        }
-    }
-
-    // Automatically persist settings to DataStore when changes are made
-    LaunchedEffect(
-        isLoaded,
-        secureFolderEnabled, privateSpaceEnabled, lockUninstall, disallowDataWipe,
-        disableSafeBoot, blockPlayStore, dynamicReinstall, deactivateUsbDebugging,
-        banDomainSet, quietHoursEnabled, quietStartHour, quietStartMin, quietEndHour, quietEndMin,
-        quietHoursTargetAppSet, quietHoursSpecificDomain,
-        usageLimitsUpdated, allowedValue, allowedUnit, selectedInterval, targetAppSet, specificDomain,
-        isActiveVowMode, deactivationRequestTime, isCollectiveLimit, vowBlocks,
-        temporaryLockoutEndTime
-    ) {
-        if (isLoaded) {
-            try {
-                vowDataStore.saveVowConfig(
-                    isVowActive = isVowActive,
-                    isActiveVowMode = isActiveVowMode,
-                    remainingVowSeconds = com.avow.app.util.VowValidator.clampRemainingSeconds(days * 86400L + hours * 3600L + minutes * 60L + seconds),
-                    lastSystemUptimeMillis = SystemClock.elapsedRealtime(),
-                    banDomainSet = banDomainSet,
-                    secureFolderEnabled = secureFolderEnabled,
-                    privateSpaceEnabled = privateSpaceEnabled,
-                    lockUninstall = lockUninstall,
-                    disallowDataWipe = disallowDataWipe,
-                    disableSafeBoot = disableSafeBoot,
-                    blockPlayStore = blockPlayStore,
-                    dynamicReinstall = dynamicReinstall,
-                    deactivateUsbDebugging = deactivateUsbDebugging,
-                    quietHoursEnabled = quietHoursEnabled,
-                    quietStartHour = quietStartHour,
-                    quietStartMin = quietStartMin,
-                    quietEndHour = quietEndHour,
-                    quietEndMin = quietEndMin,
-                    quietHoursTargetAppSet = quietHoursTargetAppSet,
-                    quietHoursSpecificDomain = quietHoursSpecificDomain,
-                    usageLimitsUpdated = usageLimitsUpdated,
-                    allowedValue = allowedValue,
-                    allowedUnit = allowedUnit,
-                    selectedInterval = selectedInterval,
-                    targetAppSet = targetAppSet,
-                    specificDomain = specificDomain,
-                    deactivationRequestTime = deactivationRequestTime,
-                    isCollectiveLimit = isCollectiveLimit,
-                    vowBlocksJson = VowBlock.serializeList(vowBlocks),
-                    vowStartTimeMs = vowStartTimeMs,
-                    vowInitialDurationSeconds = vowInitialDurationSeconds,
-                    temporaryLockoutEndTime = temporaryLockoutEndTime
-                )
-            } catch (e: Exception) {
-                Log.e("MainScreen", "Failed to auto-save settings", e)
-            }
-        }
-    }
-
-    // Helper to calculate quiet hours duration in minutes
-    fun getQuietHoursDurationMinutes(startH: Int, startM: Int, endH: Int, endM: Int): Int {
-        return com.avow.app.util.VowValidator.getQuietHoursDurationMinutes(startH, startM, endH, endM)
-    }
-
-    // Helper to calculate usage limits rate in equivalent minutes per hour
-    fun getUsageLimitRate(valueStr: String, unit: String, interval: String): Float {
-        return com.avow.app.util.VowValidator.getUsageLimitRate(valueStr, unit, interval)
-    }
-
-    // Run active countdown simulation when LOCKED (ticks background-safely whenever isVowActive is true and settings are loaded)
-    LaunchedEffect(isVowActive, isLoaded) {
-        if (isVowActive && isLoaded) {
-            var lastCheckUptime = SystemClock.elapsedRealtime()
-            while (isVowActive) {
-                delay(1000L)
-                val currentUptime = SystemClock.elapsedRealtime()
-                val elapsedMs = currentUptime - lastCheckUptime
-                if (elapsedMs >= 1000L) {
-                    val elapsedSeconds = elapsedMs / 1000L
-                    lastCheckUptime += elapsedSeconds * 1000L
-                    
-                    var totalRemaining = days * 86400L + hours * 3600L + minutes * 60L + seconds
-                    totalRemaining -= elapsedSeconds
-                    
-                    if (totalRemaining <= 0L) {
-                        // Vow expired: clear restrictions natively
-                        DeviceAdmin.assertBindingVow(
-                            context = context,
-                            activate = false,
-                            secureFolderEnabled = secureFolderEnabled,
-                            privateSpaceEnabled = privateSpaceEnabled,
-                            lockUninstall = lockUninstall,
-                            disallowDataWipe = disallowDataWipe,
-                            disableSafeBoot = disableSafeBoot,
-                            blockPlayStore = blockPlayStore,
-                            deactivateUsbDebugging = deactivateUsbDebugging
-                        )
-                        isVowActive = false
-                        isActiveVowMode = false
-                        currentState = ScreenState.UNLOCKED_VAULT
-                        scope.launch {
-                            vowDataStore.clearVowConfig()
-                        }
-                        isCollectiveLimit = false
-                        // Reset Compose memory state variables
-                        vowStartTimeMs = 0L
-                        vowInitialDurationSeconds = 0L
-                        days = 0
-                        hours = 0
-                        minutes = 0
-                        seconds = 0
-                        showToast("aVow: Temporal lock has expired. Restrictions cleared.")
-                        break
-                    } else {
-                        days = (totalRemaining / 86400).toInt()
-                        hours = ((totalRemaining % 86400) / 3600).toInt()
-                        minutes = ((totalRemaining % 3600) / 60).toInt()
-                        seconds = (totalRemaining % 60).toInt()
-                        
-                        vowDataStore.saveCountdownState(totalRemaining, currentUptime)
-                    }
-                }
-            }
         }
     }
 
@@ -519,128 +126,155 @@ fun MainScreen(
             .fillMaxSize()
             .background(LightGraphiteBg)
     ) {
-        when (currentState) {
+        when (uiState.currentState) {
             ScreenState.UNLOCKED_VAULT, ScreenState.LOCKED_VAULT -> {
                 VaultDashboard(
-                    statusText = if (isVowActive) "LOCKED" else "UNLOCKED",
-                    statusColor = if (isVowActive) LockedRed else MonospaceText,
-                    days = days,
-                    hours = hours,
-                    minutes = minutes,
-                    seconds = seconds,
-                    panelThreeTitle = if (isVowActive) "ADD BINDING TIME" else "INFLICT BINDING VOW",
+                    statusText = if (uiState.isVowActive) "LOCKED" else "UNLOCKED",
+                    statusColor = if (uiState.isVowActive) LockedRed else MonospaceText,
+                    days = uiState.days,
+                    hours = uiState.hours,
+                    minutes = uiState.minutes,
+                    seconds = uiState.seconds,
+                    panelThreeTitle = if (uiState.isVowActive) "ADD BINDING TIME" else "INFLICT BINDING VOW",
                     panelThreeSubtitle = "RESTRICTION_2",
-                    onQuietHoursClick = { showQuietHoursDialog = true },
-                    onSetUsageLimitsClick = { showUsageLimitsDialog = true },
-                    onPanelThreeClick = { showBindingVowDialog = true },
-                    onSettingsClick = { currentState = ScreenState.CONFIGURATION },
+                    onQuietHoursClick = { 
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showQuietHoursDialog = true 
+                    },
+                    onSetUsageLimitsClick = { 
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showUsageLimitsDialog = true 
+                    },
+                    onPanelThreeClick = { 
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showBindingVowDialog = true 
+                    },
+                    onSettingsClick = { 
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.setScreenState(ScreenState.CONFIGURATION) 
+                    },
                     onDeactivateClick = {
-                        val currentTime = System.currentTimeMillis()
-                        if (deactivationRequestTime == 0L) {
-                            deactivationRequestTime = currentTime
-                            scope.launch {
-                                vowDataStore.saveDeactivationRequestTime(currentTime)
-                            }
-                            showToast("Deactivation requested. 24-hour cooling-off period initiated.")
-                        } else {
-                            val elapsed = currentTime - deactivationRequestTime
-                            val remainingMs = 24L * 3600L * 1000L - elapsed
-                            if (remainingMs > 0) {
-                                val remainingHours = remainingMs / (3600L * 1000L)
-                                val remainingMins = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
-                                val remainingSecs = (remainingMs % (60L * 1000L)) / 1000L
-                                showToast("Cooling-off active. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
-                            } else {
-                                val err = DeviceAdmin.deactivateDeviceOwner(context)
-                                if (err != null) {
-                                    showToast(err)
-                                } else {
-                                    showToast("aVow: System Authority Deactivated. Natively Uninstallable.")
-                                    deactivationRequestTime = 0L
-                                    scope.launch {
-                                        vowDataStore.saveDeactivationRequestTime(0L)
-                                    }
-                                }
-                            }
-                        }
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.requestDeactivation()
                     },
                     onViewFocusInsightsClick = {
-                        currentState = ScreenState.FOCUS_HISTORY
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.setScreenState(ScreenState.FOCUS_HISTORY)
                     },
-                    quietHoursActivated = vowBlocks.any { it.isEnabled },
-                    usageLimitsActivated = usageLimitsUpdated,
-                    bindingVowActivated = isVowActive,
-                    deactivationRequestTime = deactivationRequestTime,
-                    tickTrigger = tickTrigger,
-                    isActiveVowMode = isActiveVowMode,
-                    onVowModeChange = { isActiveVowMode = it }
+                    quietHoursActivated = uiState.vowBlocks.any { it.isEnabled },
+                    usageLimitsActivated = uiState.usageLimitsUpdated,
+                    bindingVowActivated = uiState.isVowActive,
+                    deactivationRequestTime = uiState.deactivationRequestTime,
+                    tickTrigger = uiState.seconds, // use seconds as tick trigger for UI updates
+                    isActiveVowMode = uiState.isActiveVowMode,
+                    onVowModeChange = { 
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.updateState { copy(isActiveVowMode = it) }
+                        viewModel.saveConfigToDataStore()
+                    }
                 )
             }
             ScreenState.CONFIGURATION -> {
                 ConfigurationWorkspace(
-                    secureFolderEnabled = secureFolderEnabled,
+                    secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else secureFolderEnabled = !secureFolderEnabled
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    privateSpaceEnabled = privateSpaceEnabled,
+                    privateSpaceEnabled = uiState.privateSpaceEnabled,
                     onPrivateSpaceToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else privateSpaceEnabled = !privateSpaceEnabled
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(privateSpaceEnabled = !privateSpaceEnabled) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    lockUninstall = lockUninstall,
+                    lockUninstall = uiState.lockUninstall,
                     onLockUninstallToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else lockUninstall = !lockUninstall
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(lockUninstall = !lockUninstall) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    disallowDataWipe = disallowDataWipe,
+                    disallowDataWipe = uiState.disallowDataWipe,
                     onDisallowDataWipeToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else disallowDataWipe = !disallowDataWipe
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(disallowDataWipe = !disallowDataWipe) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    disableSafeBoot = disableSafeBoot,
+                    disableSafeBoot = uiState.disableSafeBoot,
                     onDisableSafeBootToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else disableSafeBoot = !disableSafeBoot
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(disableSafeBoot = !disableSafeBoot) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    blockPlayStore = blockPlayStore,
+                    blockPlayStore = uiState.blockPlayStore,
                     onBlockPlayStoreToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else blockPlayStore = !blockPlayStore
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(blockPlayStore = !blockPlayStore) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    dynamicReinstall = dynamicReinstall,
+                    dynamicReinstall = uiState.dynamicReinstall,
                     onDynamicReinstallToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else dynamicReinstall = !dynamicReinstall
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(dynamicReinstall = !dynamicReinstall) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    deactivateUsbDebugging = deactivateUsbDebugging,
+                    deactivateUsbDebugging = uiState.deactivateUsbDebugging,
                     onDeactivateUsbDebuggingToggle = {
-                        if (isVowActive) showToast("Error: Restrictions cannot be modified while locked.")
-                        else deactivateUsbDebugging = !deactivateUsbDebugging
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(deactivateUsbDebugging = !deactivateUsbDebugging) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
-                    banDomainSet = banDomainSet,
+                    banDomainSet = uiState.banDomainSet,
                     onDomainAdd = { domain ->
-                        if (!banDomainSet.contains(domain)) {
-                            banDomainSet = banDomainSet + domain
+                        if (!uiState.banDomainSet.contains(domain)) {
+                            viewModel.updateState { copy(banDomainSet = banDomainSet + domain) }
+                            viewModel.saveConfigToDataStore()
                         }
                     },
                     onDomainRemove = { domain ->
-                        if (isVowActive) {
-                            showToast("Error: Cannot remove domains while locked.")
+                        if (uiState.isVowActive) {
+                            viewModel.showToast("Error: Cannot remove domains while locked.")
                         } else {
-                            banDomainSet = banDomainSet - domain
+                            viewModel.updateState { copy(banDomainSet = banDomainSet - domain) }
+                            viewModel.saveConfigToDataStore()
                         }
                     },
                     onBack = {
-                        currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.setScreenState(if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT)
                     },
-                    isLocked = isVowActive
+                    isLocked = uiState.isVowActive,
+                    isDeviceOwner = uiState.isDeviceOwner
                 )
             }
             ScreenState.INTRUSION_INTERCEPT -> {
                 IntrusionInterceptOverlay(
                     onExit = {
-                        currentState = previousState
+                        viewModel.setScreenState(uiState.previousState)
                     }
                 )
             }
@@ -650,262 +284,140 @@ fun MainScreen(
             ScreenState.FOCUS_HISTORY -> {
                 FocusHistoryWorkspace(
                     onBack = {
-                        currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.setScreenState(if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT)
                     },
                     db = com.avow.app.data.history.VowDatabase.getDatabase(context)
                 )
             }
         }
 
-        // Scheduled Blocks Settings Dialog
         if (showQuietHoursDialog) {
             QuietHoursConfigDialog(
-                vowBlocks = vowBlocks,
-                installedApps = installedApps,
-                isLocked = isVowActive,
+                vowBlocks = uiState.vowBlocks,
+                installedApps = uiState.installedApps,
+                isLocked = uiState.isVowActive,
                 onDismiss = { showQuietHoursDialog = false },
-                showToast = showToast,
+                showToast = { viewModel.showToast(it) },
                 onUpdate = { newBlocks ->
-                    if (isVowActive) {
-                        val isContainmentValid = com.avow.app.util.VowValidator.validateContainment(frozenVowBlocks, newBlocks)
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    if (uiState.isVowActive) {
+                        val isContainmentValid = com.avow.app.util.VowValidator.validateContainment(uiState.frozenVowBlocks, newBlocks)
                         if (!isContainmentValid) {
-                            showToast("Error: Scheduled blocks cannot be shortened, shifted or deleted when locked.")
+                            viewModel.showToast("Error: Scheduled blocks cannot be shortened, shifted or deleted when locked.")
                         } else {
-                            vowBlocks = newBlocks
-                            frozenVowBlocks = newBlocks
+                            viewModel.updateState { copy(vowBlocks = newBlocks, frozenVowBlocks = newBlocks) }
+                            viewModel.saveConfigToDataStore()
                             showQuietHoursDialog = false
-                            showToast("Scheduled blocks updated (stricter).")
+                            viewModel.showToast("Scheduled blocks updated (stricter).")
                         }
                     } else {
-                        vowBlocks = newBlocks
+                        viewModel.updateState { copy(vowBlocks = newBlocks) }
+                        viewModel.saveConfigToDataStore()
                         showQuietHoursDialog = false
-                        showToast("Scheduled blocks updated.")
+                        viewModel.showToast("Scheduled blocks updated.")
                     }
                 }
             )
         }
 
-        // Usage Limits Settings Dialog
         if (showUsageLimitsDialog) {
             UsageLimitsConfigDialog(
-                enabled = usageLimitsUpdated,
-                allowedValue = allowedValue,
-                allowedUnit = allowedUnit,
-                selectedInterval = selectedInterval,
-                targetAppSet = targetAppSet,
-                specificDomain = specificDomain,
-                installedApps = installedApps,
-                isLocked = isVowActive,
+                enabled = uiState.usageLimitsUpdated,
+                allowedValue = uiState.allowedValue,
+                allowedUnit = uiState.allowedUnit,
+                selectedInterval = uiState.selectedInterval,
+                targetAppSet = uiState.targetAppSet,
+                specificDomain = uiState.specificDomain,
+                installedApps = uiState.installedApps,
+                isLocked = uiState.isVowActive,
                 onDismiss = { showUsageLimitsDialog = false },
                 onUpdate = { newEnabled, newAllowedValue, newAllowedUnit, newSelectedInterval, newTargetAppSet, newSpecificDomain, newIsCollectiveLimit ->
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     val minutesVal = newAllowedValue.toFloatOrNull()
                     if (minutesVal == null || minutesVal <= 0f) {
-                        showToast("Error: Invalid allowed value.")
+                        viewModel.showToast("Error: Invalid allowed value.")
                         return@UsageLimitsConfigDialog
                     }
                     
-                    if (isVowActive) {
-                        // 1. Cannot disable limits if previously enabled
-                        if (usageLimitsUpdated && !newEnabled) {
-                            showToast("Error: Usage limits cannot be disabled while locked.")
+                    if (uiState.isVowActive) {
+                        if (uiState.usageLimitsUpdated && !newEnabled) {
+                            viewModel.showToast("Error: Usage limits cannot be disabled while locked.")
                             return@UsageLimitsConfigDialog
                         }
-                        // 2. Cannot remove target apps
-                        val removedApps = targetAppSet - newTargetAppSet
+                        val removedApps = uiState.targetAppSet - newTargetAppSet
                         if (removedApps.isNotEmpty()) {
-                            showToast("Error: Target applications cannot be removed while locked.")
+                            viewModel.showToast("Error: Target applications cannot be removed while locked.")
                             return@UsageLimitsConfigDialog
                         }
-                        // 3. Stricter check (fewer minutes per hour/day rate)
-                        val newRate = getUsageLimitRate(newAllowedValue, newAllowedUnit, newSelectedInterval)
-                        val oldRate = getUsageLimitRate(frozenAllowedValue, frozenAllowedUnit, frozenInterval)
+                        val newRate = com.avow.app.util.VowValidator.getUsageLimitRate(newAllowedValue, newAllowedUnit, newSelectedInterval)
+                        val oldRate = com.avow.app.util.VowValidator.getUsageLimitRate(uiState.frozenAllowedValue, uiState.frozenAllowedUnit, uiState.frozenInterval)
                         if (newRate > oldRate) {
-                            showToast("Error: Usage limits can only be made stricter (fewer minutes).")
+                            viewModel.showToast("Error: Usage limits can only be made stricter (fewer minutes).")
                             return@UsageLimitsConfigDialog
                         }
                         
-                        // Validation passed, update parent states
-                        usageLimitsUpdated = newEnabled
-                        allowedValue = newAllowedValue
-                        allowedUnit = newAllowedUnit
-                        selectedInterval = newSelectedInterval
-                        targetAppSet = newTargetAppSet
-                        specificDomain = newSpecificDomain
-                        isCollectiveLimit = newIsCollectiveLimit
-                        
-                        frozenAllowedValue = newAllowedValue
-                        frozenAllowedUnit = newAllowedUnit
-                        frozenInterval = newSelectedInterval
-                        
+                        viewModel.updateState { 
+                            copy(
+                                usageLimitsUpdated = newEnabled, allowedValue = newAllowedValue, allowedUnit = newAllowedUnit,
+                                selectedInterval = newSelectedInterval, targetAppSet = newTargetAppSet, specificDomain = newSpecificDomain,
+                                isCollectiveLimit = newIsCollectiveLimit, frozenAllowedValue = newAllowedValue,
+                                frozenAllowedUnit = newAllowedUnit, frozenInterval = newSelectedInterval
+                            )
+                        }
+                        viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        showToast("Usage limits updated (stricter).")
+                        viewModel.showToast("Usage limits updated (stricter).")
                     } else {
-                        // Unlocked: Apply all changes freely
-                        usageLimitsUpdated = newEnabled
-                        allowedValue = newAllowedValue
-                        allowedUnit = newAllowedUnit
-                        selectedInterval = newSelectedInterval
-                        targetAppSet = newTargetAppSet
-                        specificDomain = newSpecificDomain
-                        isCollectiveLimit = newIsCollectiveLimit
-                        
+                        viewModel.updateState { 
+                            copy(
+                                usageLimitsUpdated = newEnabled, allowedValue = newAllowedValue, allowedUnit = newAllowedUnit,
+                                selectedInterval = newSelectedInterval, targetAppSet = newTargetAppSet, specificDomain = newSpecificDomain,
+                                isCollectiveLimit = newIsCollectiveLimit
+                            )
+                        }
+                        viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        showToast("Usage limits updated.")
+                        viewModel.showToast("Usage limits updated.")
                     }
                 },
-                isCollectiveLimit = isCollectiveLimit
+                isCollectiveLimit = uiState.isCollectiveLimit
             )
         }
 
-        // Binding Vow Settings Dialog (DD:HH:MM:SS)
         if (showBindingVowDialog) {
             BindingVowConfigDialog(
-                isLockedState = isVowActive,
+                isLockedState = uiState.isVowActive,
                 initialDays = initialDaysForDialog,
                 initialHours = initialHoursForDialog,
                 initialMinutes = initialMinutesForDialog,
                 initialSeconds = initialSecondsForDialog,
                 onDismiss = {
                     showBindingVowDialog = false
-                    initialDaysForDialog = "00"
-                    initialHoursForDialog = "00"
-                    initialMinutesForDialog = "00"
-                    initialSecondsForDialog = "00"
+                    initialDaysForDialog = "00"; initialHoursForDialog = "00"; initialMinutesForDialog = "00"; initialSecondsForDialog = "00"
                 },
-                onConfirm = label@ { additionalSeconds ->
-                    if (isVowActive) {
-                        val currentTotalSeconds = days * 86400L + hours * 3600L + minutes * 60L + seconds
-                        val newTotalSeconds = currentTotalSeconds + additionalSeconds
-                        days = (newTotalSeconds / 86400).toInt()
-                        hours = ((newTotalSeconds % 86400) / 3600).toInt()
-                        minutes = ((newTotalSeconds % 3600) / 60).toInt()
-                        seconds = (newTotalSeconds % 60).toInt()
-                        
-                        vowInitialDurationSeconds += additionalSeconds
-                        scope.launch {
-                            vowDataStore.saveCountdownState(newTotalSeconds, SystemClock.elapsedRealtime(), additionalSeconds)
-                        }
-                        showToast("Added time to the active Vow.")
-                    } else {
-                        // Check if BlockerService Accessibility Service is active
-                        if (!isAccessibilityServiceEnabled(context, BlockerService::class.java)) {
-                            showToast("Error: aVow Accessibility Service is not active. Enable it in Settings first.")
-                            showBindingVowDialog = false
-                            initialDaysForDialog = "00"
-                            initialHoursForDialog = "00"
-                            initialMinutesForDialog = "00"
-                            initialSecondsForDialog = "00"
-                            return@label
-                        }
-
-                        // Inflicting Vow: Call DeviceAdmin policy restrictions
-                        val err = DeviceAdmin.assertBindingVow(
-                            context = context,
-                            activate = true,
-                            secureFolderEnabled = secureFolderEnabled,
-                            privateSpaceEnabled = privateSpaceEnabled,
-                            lockUninstall = lockUninstall,
-                            disallowDataWipe = disallowDataWipe,
-                            disableSafeBoot = disableSafeBoot,
-                            blockPlayStore = blockPlayStore,
-                            deactivateUsbDebugging = deactivateUsbDebugging
-                        )
-
-                        if (err != null) {
-                            showToast(err)
-                            showBindingVowDialog = false
-                            initialDaysForDialog = "00"
-                            initialHoursForDialog = "00"
-                            initialMinutesForDialog = "00"
-                            initialSecondsForDialog = "00"
-                            return@label
-                        }
-                        
-                        days = (additionalSeconds / 86400).toInt()
-                        hours = ((additionalSeconds % 86400) / 3600).toInt()
-                        minutes = ((additionalSeconds % 3600) / 60).toInt()
-                        seconds = (additionalSeconds % 60).toInt()
-                        
-                        frozenAllowedValue = allowedValue
-                        frozenAllowedUnit = allowedUnit
-                        frozenInterval = selectedInterval
-                        frozenQuietHoursEnabled = quietHoursEnabled
-                        frozenQuietStartHour = quietStartHour
-                        frozenQuietStartMin = quietStartMin
-                        frozenQuietEndHour = quietEndHour
-                        frozenQuietEndMin = quietEndMin
-                        frozenQuietHoursTargetAppSet = quietHoursTargetAppSet
-                        frozenQuietHoursSpecificDomain = quietHoursSpecificDomain
-                        frozenVowBlocks = vowBlocks
-                        
-                        isVowActive = true
-                        currentState = ScreenState.LOCKED_VAULT
-                        
-                        val startMs = System.currentTimeMillis()
-                        vowStartTimeMs = startMs
-                        vowInitialDurationSeconds = additionalSeconds
-                        scope.launch {
-                            vowDataStore.saveVowConfig(
-                                isVowActive = true,
-                                isActiveVowMode = isActiveVowMode,
-                                remainingVowSeconds = additionalSeconds,
-                                lastSystemUptimeMillis = SystemClock.elapsedRealtime(),
-                                banDomainSet = banDomainSet,
-                                secureFolderEnabled = secureFolderEnabled,
-                                privateSpaceEnabled = privateSpaceEnabled,
-                                lockUninstall = lockUninstall,
-                                disallowDataWipe = disallowDataWipe,
-                                disableSafeBoot = disableSafeBoot,
-                                blockPlayStore = blockPlayStore,
-                                dynamicReinstall = dynamicReinstall,
-                                deactivateUsbDebugging = deactivateUsbDebugging,
-                                quietHoursEnabled = quietHoursEnabled,
-                                quietStartHour = quietStartHour,
-                                quietStartMin = quietStartMin,
-                                quietEndHour = quietEndHour,
-                                quietEndMin = quietEndMin,
-                                quietHoursTargetAppSet = quietHoursTargetAppSet,
-                                quietHoursSpecificDomain = quietHoursSpecificDomain,
-                                usageLimitsUpdated = usageLimitsUpdated,
-                                allowedValue = allowedValue,
-                                allowedUnit = allowedUnit,
-                                selectedInterval = selectedInterval,
-                                targetAppSet = targetAppSet,
-                                specificDomain = specificDomain,
-                                deactivationRequestTime = deactivationRequestTime,
-                                isCollectiveLimit = isCollectiveLimit,
-                                vowBlocksJson = VowBlock.serializeList(vowBlocks),
-                                vowStartTimeMs = startMs,
-                                vowInitialDurationSeconds = additionalSeconds,
-                                resetStats = true,
-                                temporaryLockoutEndTime = temporaryLockoutEndTime
-                            )
-                        }
-
-                        if (err == null) {
-                            showToast("Binding Vow Inflicted - System Authority Active")
-                        }
+                onConfirm = { additionalSeconds ->
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    val err = viewModel.addBindingTime(additionalSeconds)
+                    if (err != null) {
+                        viewModel.showToast(err)
                     }
                     showBindingVowDialog = false
-                    initialDaysForDialog = "00"
-                    initialHoursForDialog = "00"
-                    initialMinutesForDialog = "00"
-                    initialSecondsForDialog = "00"
+                    initialDaysForDialog = "00"; initialHoursForDialog = "00"; initialMinutesForDialog = "00"; initialSecondsForDialog = "00"
                 }
             )
         }
 
-        // Toast Banner Overlay
         AnimatedVisibility(
-            visible = inAppToastMessage != null,
+            visible = uiState.inAppToastMessage != null,
             enter = slideInVertically { -it } + fadeIn(),
             exit = slideOutVertically { -it } + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            inAppToastMessage?.let { msg ->
+            uiState.inAppToastMessage?.let { msg ->
                 InAppToastBanner(
                     message = msg,
-                    onDismiss = { inAppToastMessage = null }
+                    onDismiss = { viewModel.clearToast() }
                 )
             }
         }
@@ -1454,7 +966,8 @@ fun ConfigurationWorkspace(
     onDomainAdd: (String) -> Unit,
     onDomainRemove: (String) -> Unit,
     onBack: () -> Unit,
-    isLocked: Boolean
+    isLocked: Boolean,
+    isDeviceOwner: Boolean
 ) {
     val restrictionsList = listOf(
         RestrictionItem("SAMSUNG KNOX SECURE FOLDER", "com.samsung.knox.securefolder", secureFolderEnabled, onSecureFolderToggle),
