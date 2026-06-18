@@ -16,7 +16,16 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.d("BootReceiver", "onReceive triggered with action: $action")
         
-        if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.LOCKED_BOOT_COMPLETED") {
+        if (action == Intent.ACTION_BOOT_COMPLETED || 
+            action == "android.intent.action.LOCKED_BOOT_COMPLETED" ||
+            action == Intent.ACTION_USER_UNLOCKED) {
+            
+            val userManager = context.getSystemService(Context.USER_SERVICE) as android.os.UserManager
+            if (!userManager.isUserUnlocked) {
+                Log.w("BootReceiver", "Device locked (Direct-Boot phase). Deferring initialization until ACTION_USER_UNLOCKED.")
+                return
+            }
+
             val vowDataStore = VowDataStore(context.applicationContext)
             val pendingResult = goAsync()
             
