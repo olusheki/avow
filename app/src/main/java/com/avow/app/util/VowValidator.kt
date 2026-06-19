@@ -142,7 +142,8 @@ object VowValidator {
         doomscrollEndHour: Int = 5,
         doomscrollEndMin: Int = 0,
         doomscrollTargetAppSet: Set<String> = emptySet(),
-        doomscrollCooldownMinutes: Int = 60
+        doomscrollCooldownMinutes: Int = 60,
+        doomscrollAllowanceMinutes: Int = 15
     ): String {
         val sortedDomains = banDomainSet.sorted().joinToString(",")
         val sortedApps = targetAppSet.sorted().joinToString(",")
@@ -152,7 +153,7 @@ object VowValidator {
                 "$secureFolderEnabled|$privateSpaceEnabled|$lockUninstall|$disallowDataWipe|$disableSafeBoot|$blockPlayStore|$dynamicReinstall|" +
                 "$deactivateUsbDebugging|$quietHoursEnabled|$quietStartHour|$quietStartMin|$quietEndHour|$quietEndMin|$sortedQuietHoursApps|" +
                 "$quietHoursSpecificDomain|$usageLimitsUpdated|$allowedValue|$allowedUnit|$selectedInterval|$specificDomain|$isCollectiveLimit|$vowBlocksJson|$temporaryLockoutEndTime|$vowStartTimeMs|$vowInitialDurationSeconds|" +
-                "$doomscrollShieldEnabled|$doomscrollAllTime|$doomscrollStartHour|$doomscrollStartMin|$doomscrollEndHour|$doomscrollEndMin|$sortedDoomscrollApps|$doomscrollCooldownMinutes"
+                "$doomscrollShieldEnabled|$doomscrollAllTime|$doomscrollStartHour|$doomscrollStartMin|$doomscrollEndHour|$doomscrollEndMin|$sortedDoomscrollApps|$doomscrollCooldownMinutes|$doomscrollAllowanceMinutes"
         
         val secretKey = getOrCreateSecretKey()
         val mac = Mac.getInstance("HmacSHA256")
@@ -194,8 +195,10 @@ object VowValidator {
         if (savedRemainingSeconds <= 0L) return 0L
         
         return if (currentUptimeMillis < lastUptimeMillis) {
-            // Reboot detected! Resume directly from saved remaining duration
-            clampRemainingSeconds(savedRemainingSeconds)
+            // Reboot detected! Deduct the time elapsed since the reboot
+            val elapsedSeconds = currentUptimeMillis / 1000L
+            val calculated = savedRemainingSeconds - elapsedSeconds
+            clampRemainingSeconds(calculated)
         } else {
             // App was closed but device stayed on. Deduct elapsed time.
             val elapsedSeconds = (currentUptimeMillis - lastUptimeMillis) / 1000L

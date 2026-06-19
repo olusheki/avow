@@ -22,12 +22,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel @JvmOverloads constructor(
+    application: Application,
+    private val vowDataStore: com.avow.app.data.VowDataStore = com.avow.app.data.VowDataStore(application)
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
-
-    private val vowDataStore = VowDataStore(application)
 
     init {
         loadInstalledApps()
@@ -97,6 +98,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val doomscrollEndMin = prefs[VowDataStore.DOOMSCROLL_END_MIN] ?: 0
                 val doomscrollTargetAppSet = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
                 val doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
+                val doomscrollAllowanceMinutes = prefs[VowDataStore.DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
                 
                 var vowBlocks = VowBlock.deserializeList(prefs[VowDataStore.VOW_BLOCKS_JSON] ?: "")
                 if (vowBlocks.isEmpty()) {
@@ -215,6 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         doomscrollEndMin = doomscrollEndMin,
                         doomscrollTargetAppSet = doomscrollTargetAppSet,
                         doomscrollCooldownMinutes = doomscrollCooldownMinutes,
+                        doomscrollAllowanceMinutes = doomscrollAllowanceMinutes,
                         frozenDoomscrollShieldEnabled = doomscrollShieldEnabled,
                         frozenDoomscrollAllTime = doomscrollAllTime,
                         frozenDoomscrollStartHour = doomscrollStartHour,
@@ -223,6 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         frozenDoomscrollEndMin = doomscrollEndMin,
                         frozenDoomscrollTargetAppSet = doomscrollTargetAppSet,
                         frozenDoomscrollCooldownMinutes = doomscrollCooldownMinutes,
+                        frozenDoomscrollAllowanceMinutes = doomscrollAllowanceMinutes,
                         days = days,
                         hours = hours,
                         minutes = minutes,
@@ -251,7 +255,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Temporary lockout exit check
                 if (state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
-                    if (System.currentTimeMillis() >= state.temporaryLockoutEndTime) {
+                    if (SystemClock.elapsedRealtime() >= state.temporaryLockoutEndTime) {
                         updateState { copy(currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT) }
                     }
                 }
@@ -359,7 +363,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     doomscrollEndHour = state.doomscrollEndHour,
                     doomscrollEndMin = state.doomscrollEndMin,
                     doomscrollTargetAppSet = state.doomscrollTargetAppSet,
-                    doomscrollCooldownMinutes = state.doomscrollCooldownMinutes
+                    doomscrollCooldownMinutes = state.doomscrollCooldownMinutes,
+                    doomscrollAllowanceMinutes = state.doomscrollAllowanceMinutes
                 )
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to auto-save settings", e)
@@ -474,7 +479,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     frozenDoomscrollEndHour = doomscrollEndHour,
                     frozenDoomscrollEndMin = doomscrollEndMin,
                     frozenDoomscrollTargetAppSet = doomscrollTargetAppSet,
-                    frozenDoomscrollCooldownMinutes = doomscrollCooldownMinutes
+                    frozenDoomscrollCooldownMinutes = doomscrollCooldownMinutes,
+                    frozenDoomscrollAllowanceMinutes = doomscrollAllowanceMinutes
                 ) 
             }
             saveConfigToDataStore()

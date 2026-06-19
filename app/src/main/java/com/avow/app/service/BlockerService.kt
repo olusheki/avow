@@ -83,6 +83,7 @@ class BlockerService : AccessibilityService() {
     @Volatile private var doomscrollEndMin = 0
     @Volatile private var doomscrollTargetApps = emptySet<String>()
     @Volatile private var doomscrollCooldownMinutes = 60
+    @Volatile private var doomscrollAllowanceMinutes = 15
 
     @Volatile private var isCollectiveLimit = false
     @Volatile private var packageUsageJsonStr = ""
@@ -158,6 +159,7 @@ class BlockerService : AccessibilityService() {
                 doomscrollEndMin = prefs[VowDataStore.DOOMSCROLL_END_MIN] ?: 0
                 doomscrollTargetApps = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
                 doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
+                doomscrollAllowanceMinutes = prefs[VowDataStore.DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
                 doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
@@ -280,12 +282,6 @@ class BlockerService : AccessibilityService() {
                 }
             }
 
-            if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-                if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkgName)) {
-                    handleScrollEvent(pkgName)
-                }
-            }
-
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 val oldForeground = currentForegroundPackage
                 currentForegroundPackage = pkgName
@@ -396,13 +392,20 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun manageTrackingJob() {
-        if (isCurrentlyRestrictedForUsage()) {
+        val usageActive = isCurrentlyRestrictedForUsage()
+        val doomscrollActive = isCurrentlyRestrictedForDoomscroll()
+        
+        if (usageActive || doomscrollActive) {
             if (trackingJob == null || !trackingJob!!.isActive) {
                 trackingJob = serviceScope.launch {
                     while (isActive) {
                         delay(1000L)
-                        if (isCurrentlyRestrictedForUsage()) {
-                            updateUsageStatistics()
+                        val currentUsageActive = isCurrentlyRestrictedForUsage()
+                        val currentDoomscrollActive = isCurrentlyRestrictedForDoomscroll()
+                        
+                        if (currentUsageActive || currentDoomscrollActive) {
+                            if (currentUsageActive) updateUsageStatistics()
+                            if (currentDoomscrollActive) updateDoomscrollStatistics()
                         } else {
                             break
                         }
@@ -491,6 +494,13 @@ class BlockerService : AccessibilityService() {
         return false
     }
 
+    private fun isCurrentlyRestrictedForDoomscroll(): Boolean {
+        if (!doomscrollShieldEnabled) return false
+        val pkg = currentForegroundPackage
+        if (pkg.isEmpty()) return false
+        return isDoomscrollTargetApp(pkg)
+    }
+
     private fun isQuietHoursRestrictedAppPackage(pkgName: String): Boolean {
         if (!isVowActive) return false
         if (quietHoursTargetAppSet.contains("All Social Media")) {
@@ -536,24 +546,39 @@ class BlockerService : AccessibilityService() {
         return false
     }
 
-    private fun handleScrollEvent(pkgName: String) {
+    private suspend fun updateDoomscrollStatistics() {
         val isRestrictionActive = doomscrollAllTime || isCurrentTimeInQuietHours(
             doomscrollStartHour,
             doomscrollStartMin,
             doomscrollEndHour,
             doomscrollEndMin
         )
-        when (doomscrollTracker.handleScroll(SystemClock.elapsedRealtime(), isRestrictionActive)) {
+        val allowanceMs = doomscrollAllowanceMinutes * 60L * 1000L
+        
+        val result = doomscrollTracker.tick(isRestrictionActive, allowanceMs)
+        
+        // Save the updated accumulatedMs every few seconds to prevent data loss on crash
+        if (doomscrollTracker.accumulatedMs % 10000L == 0L) {
+            serviceScope.launch {
+                vowDataStore.saveDoomscrollAccumulatedMs(doomscrollTracker.accumulatedMs)
+            }
+        }
+        
+        when (result) {
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerLockout -> {
                 serviceScope.launch {
                     val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
                     vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + cooldownMs)
                     vowDataStore.saveDoomscrollAccumulatedMs(0L)
                 }
-                triggerLockoutOverlay()
+                withContext(Dispatchers.Main) {
+                    triggerLockoutOverlay()
+                }
             }
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerWarning -> {
-                showWarningNotification()
+                withContext(Dispatchers.Main) {
+                    showWarningNotification()
+                }
             }
             else -> {}
         }
@@ -604,10 +629,12 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun handleForegroundPackageChange(oldPkg: String, newPkg: String) {
+        val oldIsTarget = doomscrollShieldEnabled && isDoomscrollTargetApp(oldPkg)
+        val newIsTarget = doomscrollShieldEnabled && isDoomscrollTargetApp(newPkg)
+        
         val result = doomscrollTracker.handleForegroundChange(
-            oldPkg = oldPkg,
-            newPkg = newPkg,
-            isTargetPkg = { doomscrollShieldEnabled && isDoomscrollTargetApp(it) },
+            oldIsTarget = oldIsTarget,
+            newIsTarget = newIsTarget,
             now = System.currentTimeMillis(),
             lastClosedTime = doomscrollLastClosedTime
         )

@@ -1,8 +1,6 @@
 package com.avow.app.util
 
 class DoomscrollTracker {
-    var currentSessionStartMs: Long = 0L
-    var lastScrollTimeMs: Long = 0L
     var accumulatedMs: Long = 0L
     var warningSent: Boolean = false
 
@@ -12,34 +10,20 @@ class DoomscrollTracker {
         object TriggerLockout : TrackingResult()
     }
 
-    fun handleScroll(now: Long, isRestrictionActive: Boolean): TrackingResult {
-        if (lastScrollTimeMs == 0L || now - lastScrollTimeMs > 30000L) {
-            if (currentSessionStartMs > 0L && lastScrollTimeMs >= currentSessionStartMs) {
-                accumulatedMs += (lastScrollTimeMs - currentSessionStartMs)
+    fun tick(isRestrictionActive: Boolean, allowanceMs: Long): TrackingResult {
+        if (isRestrictionActive) {
+            accumulatedMs += 1000L
+            
+            if (accumulatedMs >= allowanceMs) {
+                accumulatedMs = 0L
+                warningSent = false
+                return TrackingResult.TriggerLockout
+            } else if (accumulatedMs >= (allowanceMs * 0.8).toLong() && !warningSent) {
+                warningSent = true
+                return TrackingResult.TriggerWarning
             }
-            currentSessionStartMs = now
         }
-        lastScrollTimeMs = now
-
-        val currentSessionDuration = now - currentSessionStartMs
-        val totalAccumulated = accumulatedMs + currentSessionDuration
-
-        val limitMs = if (isRestrictionActive) 5L * 60L * 1000L else 15L * 60L * 1000L
-        val warningThresholdMs = limitMs
-        val lockoutThresholdMs = limitMs + 15L * 60L * 1000L
-
-        return if (totalAccumulated >= lockoutThresholdMs) {
-            accumulatedMs = 0L
-            currentSessionStartMs = 0L
-            lastScrollTimeMs = 0L
-            warningSent = false
-            TrackingResult.TriggerLockout
-        } else if (totalAccumulated >= warningThresholdMs && !warningSent) {
-            warningSent = true
-            TrackingResult.TriggerWarning
-        } else {
-            TrackingResult.None
-        }
+        return TrackingResult.None
     }
 
     class ForegroundResult(
@@ -49,50 +33,37 @@ class DoomscrollTracker {
     )
 
     fun handleForegroundChange(
-        oldPkg: String,
-        newPkg: String,
-        isTargetPkg: (String) -> Boolean,
+        oldIsTarget: Boolean,
+        newIsTarget: Boolean,
         now: Long,
         lastClosedTime: Long
     ): ForegroundResult {
-        val oldIsTarget = isTargetPkg(oldPkg)
-        val newIsTarget = isTargetPkg(newPkg)
-
         if (oldIsTarget && !newIsTarget) {
-            val currentSessionDuration = if (currentSessionStartMs > 0L && lastScrollTimeMs >= currentSessionStartMs) {
-                lastScrollTimeMs - currentSessionStartMs
-            } else {
-                0L
-            }
-            val totalAccumulated = accumulatedMs + currentSessionDuration
-            accumulatedMs = totalAccumulated
-            currentSessionStartMs = 0L
-            lastScrollTimeMs = 0L
+            // Leaving the target app
             return ForegroundResult(
-                newAccumulatedMs = totalAccumulated,
+                newAccumulatedMs = accumulatedMs,
                 saveClosedTime = true,
                 resetAccumulated = false
             )
         } else if (!oldIsTarget && newIsTarget) {
-            currentSessionStartMs = 0L
-            lastScrollTimeMs = 0L
-            if (lastClosedTime > 0L && (now - lastClosedTime) < 30L * 60L * 1000L) {
-                // Resume
-                return ForegroundResult(
-                    newAccumulatedMs = accumulatedMs,
-                    saveClosedTime = false,
-                    resetAccumulated = false
-                )
+            // Entering the target app
+            if (lastClosedTime > 0L) {
+                val timeAway = now - lastClosedTime
+                accumulatedMs = maxOf(0L, accumulatedMs - timeAway)
+                if (accumulatedMs == 0L) {
+                    warningSent = false
+                }
             } else {
                 accumulatedMs = 0L
                 warningSent = false
-                return ForegroundResult(
-                    newAccumulatedMs = 0L,
-                    saveClosedTime = false,
-                    resetAccumulated = true
-                )
             }
+            return ForegroundResult(
+                newAccumulatedMs = accumulatedMs,
+                saveClosedTime = false,
+                resetAccumulated = (accumulatedMs == 0L)
+            )
         }
+        
         return ForegroundResult(
             newAccumulatedMs = accumulatedMs,
             saveClosedTime = false,

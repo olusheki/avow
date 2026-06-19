@@ -58,6 +58,7 @@ data class MainUiState(
     val doomscrollEndMin: Int = 0,
     val doomscrollTargetAppSet: Set<String> = emptySet(),
     val doomscrollCooldownMinutes: Int = 60,
+    val doomscrollAllowanceMinutes: Int = 15,
 
     val frozenDoomscrollShieldEnabled: Boolean = false,
     val frozenDoomscrollAllTime: Boolean = false,
@@ -67,6 +68,7 @@ data class MainUiState(
     val frozenDoomscrollEndMin: Int = 0,
     val frozenDoomscrollTargetAppSet: Set<String> = emptySet(),
     val frozenDoomscrollCooldownMinutes: Int = 60,
+    val frozenDoomscrollAllowanceMinutes: Int = 15,
 
     val vowBlocks: List<VowBlock> = emptyList(),
     val frozenVowBlocks: List<VowBlock> = emptyList(),

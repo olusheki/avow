@@ -38,8 +38,8 @@ class UptimeAnchorTest {
             savedRemainingSeconds = savedRemaining
         )
         
-        // THEN: It must resume directly from 1000s without losing any seconds to the reboot
-        assertEquals(1000L, remaining)
+        // THEN: It must resume directly from 1000s and deduct the 5s elapsed since the reboot
+        assertEquals(995L, remaining)
     }
 
     @Test

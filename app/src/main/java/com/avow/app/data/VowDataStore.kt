@@ -63,6 +63,7 @@ class VowDataStore(private val context: Context) {
         val DOOMSCROLL_END_MIN = intPreferencesKey("doomscroll_end_min")
         val DOOMSCROLL_TARGET_APP_SET = stringSetPreferencesKey("doomscroll_target_app_set")
         val DOOMSCROLL_COOLDOWN_MINUTES = intPreferencesKey("doomscroll_cooldown_minutes")
+        val DOOMSCROLL_ALLOWANCE_MINUTES = intPreferencesKey("doomscroll_allowance_minutes")
     }
  
     /**
@@ -111,6 +112,7 @@ class VowDataStore(private val context: Context) {
         val doomscrollEndMin = prefs[DOOMSCROLL_END_MIN] ?: 0
         val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
         val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
+        val doomscrollAllowanceMinutes = prefs[DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
 
         return VowValidator.computeHMACSignature(
             isVowActive = isActive,
@@ -152,7 +154,8 @@ class VowDataStore(private val context: Context) {
             doomscrollEndHour = doomscrollEndHour,
             doomscrollEndMin = doomscrollEndMin,
             doomscrollTargetAppSet = doomscrollTargetAppSet,
-            doomscrollCooldownMinutes = doomscrollCooldownMinutes
+            doomscrollCooldownMinutes = doomscrollCooldownMinutes,
+            doomscrollAllowanceMinutes = doomscrollAllowanceMinutes
         )
     }
 
@@ -203,6 +206,7 @@ class VowDataStore(private val context: Context) {
         val doomscrollEndMin = prefs[DOOMSCROLL_END_MIN] ?: 0
         val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
         val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
+        val doomscrollAllowanceMinutes = prefs[DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
 
         if (storedSig == null) {
             val hasNonDefault = isActive ||
@@ -244,7 +248,8 @@ class VowDataStore(private val context: Context) {
                     doomscrollEndHour != 5 ||
                     doomscrollEndMin != 0 ||
                     doomscrollTargetAppSet.isNotEmpty() ||
-                    doomscrollCooldownMinutes != 60
+                    doomscrollCooldownMinutes != 60 ||
+                    doomscrollAllowanceMinutes != 15
             return !hasNonDefault
         }
         
@@ -331,6 +336,7 @@ class VowDataStore(private val context: Context) {
         doomscrollEndMin: Int = 0,
         doomscrollTargetAppSet: Set<String> = emptySet(),
         doomscrollCooldownMinutes: Int = 60,
+        doomscrollAllowanceMinutes: Int = 15,
         resetStats: Boolean = false
     ) {
         context.dataStore.edit { preferences ->
@@ -374,6 +380,7 @@ class VowDataStore(private val context: Context) {
             preferences[DOOMSCROLL_END_MIN] = doomscrollEndMin
             preferences[DOOMSCROLL_TARGET_APP_SET] = doomscrollTargetAppSet
             preferences[DOOMSCROLL_COOLDOWN_MINUTES] = doomscrollCooldownMinutes
+            preferences[DOOMSCROLL_ALLOWANCE_MINUTES] = doomscrollAllowanceMinutes
 
             if (resetStats) {
                 preferences[VOW_PICKUPS_COUNT] = 0
@@ -498,6 +505,7 @@ class VowDataStore(private val context: Context) {
             preferences[DOOMSCROLL_END_MIN] = 0
             preferences[DOOMSCROLL_TARGET_APP_SET] = emptySet()
             preferences[DOOMSCROLL_COOLDOWN_MINUTES] = 60
+            preferences[DOOMSCROLL_ALLOWANCE_MINUTES] = 15
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }

@@ -3,6 +3,7 @@ package com.avow.app.ui
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,6 +71,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 // Slightly darker gray color for activated panels
 val DarkerSurfaceColor = Color(0xFF5A5A5A)
 
+fun formatTimeAmPm(hour: Int, minute: Int): String {
+    val displayHour = if (hour % 12 == 0) 12 else hour % 12
+    val amPm = if (hour < 12) "AM" else "PM"
+    return String.format("%02d:%02d %s", displayHour, minute, amPm)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -118,6 +125,31 @@ fun MainScreen(
         if (triggerIntrusion) {
             viewModel.setScreenState(ScreenState.INTRUSION_INTERCEPT)
             onIntrusionHandled()
+        }
+    }
+
+    val isMainScreen = uiState.currentState == ScreenState.UNLOCKED_VAULT || uiState.currentState == ScreenState.LOCKED_VAULT
+    BackHandler(enabled = !isMainScreen) {
+        when (uiState.currentState) {
+            ScreenState.CONFIGURATION -> {
+                viewModel.setScreenState(if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT)
+            }
+            ScreenState.FOCUS_HISTORY -> {
+                viewModel.setScreenState(if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT)
+            }
+            ScreenState.INTRUSION_INTERCEPT -> {
+                viewModel.setScreenState(uiState.previousState)
+            }
+            else -> {
+                // Do nothing for other states (e.g. TEMPORARY_LOCKOUT) to avoid back-bypass
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.inAppToastMessage) {
+        if (uiState.inAppToastMessage != null) {
+            delay(4000L)
+            viewModel.clearToast()
         }
     }
 
@@ -342,7 +374,32 @@ fun MainScreen(
                             viewModel.saveConfigToDataStore()
                         }
                     },
-                    installedApps = uiState.installedApps
+                    doomscrollAllowanceMinutes = uiState.doomscrollAllowanceMinutes,
+                    onDoomscrollAllowanceMinutesUpdate = { allowance ->
+                        if (uiState.isVowActive) {
+                            if (allowance > uiState.frozenDoomscrollAllowanceMinutes) {
+                                viewModel.showToast("Error: Allowance minutes can only be made shorter (stricter) while locked.")
+                            } else {
+                                viewModel.updateState {
+                                    copy(
+                                        doomscrollAllowanceMinutes = allowance,
+                                        frozenDoomscrollAllowanceMinutes = allowance
+                                    )
+                                }
+                                viewModel.saveConfigToDataStore()
+                            }
+                        } else {
+                            viewModel.updateState { copy(doomscrollAllowanceMinutes = allowance) }
+                            viewModel.saveConfigToDataStore()
+                        }
+                    },
+                    installedApps = uiState.installedApps,
+                    deactivationRequestTime = uiState.deactivationRequestTime,
+                    onDeactivateClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.requestDeactivation()
+                    },
+                    tickTrigger = uiState.seconds
                 )
             }
             ScreenState.INTRUSION_INTERCEPT -> {
@@ -739,12 +796,22 @@ fun VaultDashboard(
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
-                    inactiveBorderColor = OutlineAccent
+                    inactiveBorderColor = OutlineAccent,
+                    disabledActiveContainerColor = MonospaceText,
+                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledInactiveContainerColor = Color.Transparent,
+                    disabledInactiveContentColor = SubtextGrey,
+                    disabledActiveBorderColor = OutlineAccent,
+                    disabledInactiveBorderColor = OutlineAccent
                 )
             ) {
                 Text(
                     text = "PASSIVE VOW",
-                    color = if (!isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText,
+                    color = if (bindingVowActivated) {
+                        if (!isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                    } else {
+                        if (!isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                    },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -762,12 +829,22 @@ fun VaultDashboard(
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
-                    inactiveBorderColor = OutlineAccent
+                    inactiveBorderColor = OutlineAccent,
+                    disabledActiveContainerColor = MonospaceText,
+                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledInactiveContainerColor = Color.Transparent,
+                    disabledInactiveContentColor = SubtextGrey,
+                    disabledActiveBorderColor = OutlineAccent,
+                    disabledInactiveBorderColor = OutlineAccent
                 )
             ) {
                 Text(
                     text = "ACTIVE VOW",
-                    color = if (isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText,
+                    color = if (bindingVowActivated) {
+                        if (isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                    } else {
+                        if (isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                    },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -786,19 +863,19 @@ fun VaultDashboard(
         ) {
             DashboardPanelButton(
                 title = "QUIET HOURS",
-                subtitle = panelThreeSubtitle.replace("2", "0"), // RESTRICTION_0
+                subtitle = "",
                 isActivated = quietHoursActivated,
                 onClick = onQuietHoursClick
             )
             DashboardPanelButton(
                 title = "SET USAGE LIMITS",
-                subtitle = panelThreeSubtitle.replace("2", "1"), // RESTRICTION_1
+                subtitle = "",
                 isActivated = usageLimitsActivated,
                 onClick = onSetUsageLimitsClick
             )
             DashboardPanelButton(
                 title = panelThreeTitle,
-                subtitle = panelThreeSubtitle, // RESTRICTION_2
+                subtitle = "",
                 isActivated = bindingVowActivated,
                 onClick = onPanelThreeClick
             )
@@ -808,38 +885,6 @@ fun VaultDashboard(
                 onClick = onViewFocusInsightsClick,
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-
-        if (!bindingVowActivated) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                // Read tickTrigger to force recomposition
-                val trigger = tickTrigger
-                val buttonText = if (deactivationRequestTime > 0L) {
-                    val elapsed = System.currentTimeMillis() - deactivationRequestTime
-                    val remainingMs = 24L * 3600L * 1000L - elapsed
-                    if (remainingMs > 0) {
-                        val hoursLeft = remainingMs / (3600L * 1000L)
-                        val minsLeft = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
-                        val secsLeft = (remainingMs % (60L * 1000L)) / 1000L
-                        "{ COOLING OFF: ${String.format("%02d:%02d:%02d", hoursLeft, minsLeft, secsLeft)} }"
-                    } else {
-                        "{ DEACTIVATE DEVICE OWNER }"
-                    }
-                } else {
-                    "{ DEACTIVATE DEVICE OWNER }"
-                }
-                SharpBorderButton(
-                    text = buttonText,
-                    onClick = onDeactivateClick,
-                    modifier = Modifier.fillMaxWidth(0.85f)
-                )
-            }
         }
 
         Spacer(modifier = Modifier.weight(1.5f))
@@ -972,14 +1017,16 @@ fun DashboardPanelButton(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                color = SubtextGrey,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Normal
-            )
+            if (subtitle.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
         }
     }
 }
@@ -1056,7 +1103,12 @@ fun ConfigurationWorkspace(
     onDoomscrollTargetAppsUpdate: (Set<String>) -> Unit,
     doomscrollCooldownMinutes: Int,
     onDoomscrollCooldownMinutesUpdate: (Int) -> Unit,
-    installedApps: List<Pair<String, String>>
+    doomscrollAllowanceMinutes: Int,
+    onDoomscrollAllowanceMinutesUpdate: (Int) -> Unit,
+    installedApps: List<Pair<String, String>>,
+    deactivationRequestTime: Long = 0L,
+    onDeactivateClick: () -> Unit = {},
+    tickTrigger: Int = 0
 ) {
     val restrictionsList = listOf(
         RestrictionItem("SAMSUNG KNOX SECURE FOLDER", "com.samsung.knox.securefolder", secureFolderEnabled, onSecureFolderToggle, requiresDeviceOwner = true),
@@ -1070,6 +1122,7 @@ fun ConfigurationWorkspace(
     )
 
     val scrollState = rememberScrollState()
+    var doomscrollTimePickerTarget by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1087,7 +1140,7 @@ fun ConfigurationWorkspace(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = if (isLocked) "[ aVow // STATUS: LOCKED ]" else "[ aVow // STATUS: OPEN ]",
+                text = if (isLocked) "[ aVow // STATUS: LOCKED ]" else "",
                 color = if (isLocked) LockedRed else MonospaceText,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -1113,29 +1166,7 @@ fun ConfigurationWorkspace(
                 .background(OutlineAccent)
         )
 
-        if (!isDeviceOwner) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .background(LockedRed.copy(alpha = 0.1f))
-                    .border(1.dp, LockedRed)
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "[!] ADB DEVICE OWNER SETUP MISSING",
-                    color = LockedRed,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        } else {
-            Spacer(modifier = Modifier.height(24.dp))
-        }
+        Spacer(modifier = Modifier.height(24.dp))
 
         // 2. Custom Domain Input Field
         Column(
@@ -1144,7 +1175,7 @@ fun ConfigurationWorkspace(
                 .padding(horizontal = 24.dp)
         ) {
             Text(
-                text = "BAN_DOMAIN_SET >",
+                text = "BAN DOMAIN SET >",
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
@@ -1212,9 +1243,9 @@ fun ConfigurationWorkspace(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // 3. List of ENFORCEMENT_RESTRICTIONS & Target profiles
+        // 3. List of ENFORCEMENT RESTRICTIONS & Target profiles
         Text(
-            text = "ENFORCEMENT_RESTRICTIONS",
+            text = "ENFORCEMENT RESTRICTIONS",
             color = SubtextGrey,
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
@@ -1257,12 +1288,6 @@ fun ConfigurationWorkspace(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Normal
                         )
-                        Text(
-                            text = "(${item.detail})",
-                            color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.3f) else SubtextGrey,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        )
                     }
                 }
             }
@@ -1271,7 +1296,7 @@ fun ConfigurationWorkspace(
         // --- DOOMSCROLL SHIELD SECTION ---
         Spacer(modifier = Modifier.height(28.dp))
         Text(
-            text = "DOOMSCROLL SHIELD CONFIG",
+            text = "DOOMSCROLL BLOCK CONFIG",
             color = SubtextGrey,
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
@@ -1298,7 +1323,7 @@ fun ConfigurationWorkspace(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "ENABLE SHIELD",
+                    text = "ENABLE",
                     color = if (doomscrollShieldEnabled) MonospaceText else SubtextGrey,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
@@ -1355,54 +1380,65 @@ fun ConfigurationWorkspace(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Start Hour Slider
-                        Column {
-                            Text(
-                                text = "Start Hour: ${String.format("%02d:00", doomscrollStartHour)}",
-                                color = MonospaceText,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp
-                            )
-                            Slider(
-                                value = doomscrollStartHour.toFloat(),
-                                onValueChange = { onDoomscrollTimeUpdate(it.roundToInt(), doomscrollStartMin, doomscrollEndHour, doomscrollEndMin) },
-                                valueRange = 0f..23f,
-                                steps = 23,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MonospaceText,
-                                    activeTrackColor = MonospaceText,
-                                    inactiveTrackColor = OutlineAccent,
-                                    activeTickColor = Color.Transparent,
-                                    inactiveTickColor = Color.Transparent
+                        // Start Time Display Box
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("START TIME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .height(30.dp)
+                                    .border(1.dp, OutlineAccent)
+                                    .background(MutedSurface)
+                                    .clickable(enabled = !isLocked) {
+                                        doomscrollTimePickerTarget = "START"
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = formatTimeAmPm(doomscrollStartHour, doomscrollStartMin),
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
-                            )
+                            }
                         }
-                        // End Hour Slider
-                        Column {
-                            Text(
-                                text = "End Hour: ${String.format("%02d:00", doomscrollEndHour)}",
-                                color = MonospaceText,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp
-                            )
-                            Slider(
-                                value = doomscrollEndHour.toFloat(),
-                                onValueChange = { onDoomscrollTimeUpdate(doomscrollStartHour, doomscrollStartMin, it.roundToInt(), doomscrollEndMin) },
-                                valueRange = 0f..23f,
-                                steps = 23,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MonospaceText,
-                                    activeTrackColor = MonospaceText,
-                                    inactiveTrackColor = OutlineAccent,
-                                    activeTickColor = Color.Transparent,
-                                    inactiveTickColor = Color.Transparent
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // End Time Display Box
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("END TIME:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .height(30.dp)
+                                    .border(1.dp, OutlineAccent)
+                                    .background(MutedSurface)
+                                    .clickable(enabled = !isLocked) {
+                                        doomscrollTimePickerTarget = "END"
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = formatTimeAmPm(doomscrollEndHour, doomscrollEndMin),
+                                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
-                            )
+                            }
                         }
                     }
                 }
 
-                // Cooldown Minutes Slider
+                // Cooldown Minutes Slider (5-minute stops, max 60 minutes)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1415,10 +1451,44 @@ fun ConfigurationWorkspace(
                         fontWeight = FontWeight.Bold
                     )
                     Slider(
-                        value = doomscrollCooldownMinutes.toFloat(),
-                        onValueChange = { onDoomscrollCooldownMinutesUpdate(it.roundToInt()) },
-                        valueRange = 5f..120f,
-                        steps = 23,
+                        value = doomscrollCooldownMinutes.toFloat().coerceIn(5f, 60f),
+                        onValueChange = { newValue ->
+                            val rounded = (newValue.roundToInt() / 5) * 5
+                            onDoomscrollCooldownMinutesUpdate(rounded.coerceIn(5, 60))
+                        },
+                        valueRange = 5f..60f,
+                        steps = 10,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MonospaceText,
+                            activeTrackColor = MonospaceText,
+                            inactiveTrackColor = OutlineAccent,
+                            activeTickColor = Color.Transparent,
+                            inactiveTickColor = Color.Transparent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Allowance Minutes Slider (5-minute stops, max 60 minutes)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "SCROLL ALLOWANCE: $doomscrollAllowanceMinutes Min",
+                        color = MonospaceText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Slider(
+                        value = doomscrollAllowanceMinutes.toFloat().coerceIn(5f, 60f),
+                        onValueChange = { newValue ->
+                            val rounded = (newValue.roundToInt() / 5) * 5
+                            onDoomscrollAllowanceMinutesUpdate(rounded.coerceIn(5, 60))
+                        },
+                        valueRange = 5f..60f,
+                        steps = 10,
                         colors = SliderDefaults.colors(
                             thumbColor = MonospaceText,
                             activeTrackColor = MonospaceText,
@@ -1436,7 +1506,7 @@ fun ConfigurationWorkspace(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "DOOMSCROLL TARGET APPS",
+                        text = "TARGET APPS",
                         color = SubtextGrey,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
@@ -1523,6 +1593,56 @@ fun ConfigurationWorkspace(
                     }
                 }
             }
+        }
+
+        if (!isLocked) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                // Read tickTrigger to force recomposition
+                val trigger = tickTrigger
+                val buttonText = if (deactivationRequestTime > 0L) {
+                    val elapsed = System.currentTimeMillis() - deactivationRequestTime
+                    val remainingMs = 24L * 3600L * 1000L - elapsed
+                    if (remainingMs > 0) {
+                        val hoursLeft = remainingMs / (3600L * 1000L)
+                        val minsLeft = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
+                        val secsLeft = (remainingMs % (60L * 1000L)) / 1000L
+                        "{ COOLING OFF: ${String.format("%02d:%02d:%02d", hoursLeft, minsLeft, secsLeft)} }"
+                    } else {
+                        "{ DEACTIVATE DEVICE OWNER }"
+                    }
+                } else {
+                    "{ DEACTIVATE DEVICE OWNER }"
+                }
+                SharpBorderButton(
+                    text = buttonText,
+                    onClick = onDeactivateClick,
+                    modifier = Modifier.fillMaxWidth(0.85f)
+                )
+            }
+        }
+
+        doomscrollTimePickerTarget?.let { target ->
+            val initialHour = if (target == "START") doomscrollStartHour else doomscrollEndHour
+            val initialMinute = if (target == "START") doomscrollStartMin else doomscrollEndMin
+            DialTimePickerDialog(
+                initialHour = initialHour,
+                initialMinute = initialMinute,
+                onDismiss = { doomscrollTimePickerTarget = null },
+                onConfirm = { hour, minute ->
+                    if (target == "START") {
+                        onDoomscrollTimeUpdate(hour, minute, doomscrollEndHour, doomscrollEndMin)
+                    } else {
+                        onDoomscrollTimeUpdate(doomscrollStartHour, doomscrollStartMin, hour, minute)
+                    }
+                    doomscrollTimePickerTarget = null
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -1682,9 +1802,18 @@ fun UsageLimitsConfigDialog(
     isCollectiveLimit: Boolean
 ) {
     var localEnabled by remember { mutableStateOf(enabled) }
-    var localAllowedValue by remember { mutableStateOf(allowedValue) }
-    var localAllowedUnit by remember { mutableStateOf(allowedUnit) }
     var localSelectedInterval by remember { mutableStateOf(selectedInterval) }
+    var localAllowedUnit by remember {
+        mutableStateOf(
+            if (selectedInterval == "hour") "min" else allowedUnit
+        )
+    }
+    val initialMax = if (localAllowedUnit == "hours") 24 else 60
+    var localAllowedValue by remember {
+        mutableStateOf(
+            (allowedValue.toIntOrNull() ?: 1).coerceIn(1, initialMax).toString()
+        )
+    }
     var localTargetAppSet by remember { mutableStateOf(targetAppSet) }
     var localSpecificDomain by remember { mutableStateOf(specificDomain) }
     var localIsCollectiveLimit by remember { mutableStateOf(isCollectiveLimit) }
@@ -1786,7 +1915,7 @@ fun UsageLimitsConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIMIT_MODE: [ ${if (localIsCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
+                        text = "LIMIT MODE: [ ${if (localIsCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
                         color = MonospaceText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
@@ -1850,13 +1979,19 @@ fun UsageLimitsConfigDialog(
                                     unitDropdownExpanded = false
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text("hours", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                                onClick = {
-                                    localAllowedUnit = "hours"
-                                    unitDropdownExpanded = false
-                                }
-                            )
+                            if (localSelectedInterval == "day") {
+                                DropdownMenuItem(
+                                    text = { Text("hours", fontFamily = FontFamily.Monospace, color = MonospaceText) },
+                                    onClick = {
+                                        localAllowedUnit = "hours"
+                                        val currentVal = localAllowedValue.toIntOrNull() ?: 1
+                                        if (currentVal > 24) {
+                                            localAllowedValue = "24"
+                                        }
+                                        unitDropdownExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -1905,6 +2040,11 @@ fun UsageLimitsConfigDialog(
                                 text = { Text("hour", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                                 onClick = {
                                     localSelectedInterval = "hour"
+                                    localAllowedUnit = "min"
+                                    val currentVal = localAllowedValue.toIntOrNull() ?: 1
+                                    if (currentVal > 60) {
+                                        localAllowedValue = "60"
+                                    }
                                     intervalDropdownExpanded = false
                                 }
                             )
@@ -1921,14 +2061,17 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Horizontal Slider (Range 0-60)
+                // Horizontal Slider (Range 1 to max allowed based on unit)
+                val sliderMax = if (localAllowedUnit == "hours") 24f else 60f
+                val sliderValue = (localAllowedValue.toFloatOrNull() ?: 1f).coerceIn(1f, sliderMax)
+
                 Slider(
-                    value = localAllowedValue.toFloatOrNull() ?: 0f,
+                    value = sliderValue,
                     onValueChange = { newValue ->
-                        localAllowedValue = newValue.roundToInt().toString()
+                        localAllowedValue = newValue.roundToInt().coerceIn(1, sliderMax.toInt()).toString()
                     },
-                    valueRange = 0f..60f,
-                    steps = 59,
+                    valueRange = 1f..sliderMax,
+                    steps = (sliderMax - 1).toInt(),
                     enabled = !isLocked,
                     colors = SliderDefaults.colors(
                         thumbColor = MonospaceText,
@@ -2068,6 +2211,12 @@ fun UsageLimitsConfigDialog(
                 containerColor = MonospaceText,
                 contentColor = LightGraphiteBg,
                 shape = RectangleShape,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                    focusedElevation = 0.dp
+                ),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .sharpBorder(1.dp, OutlineAccent)
@@ -2153,7 +2302,7 @@ fun DialTimePickerDialog(
     val state = rememberTimePickerState(
         initialHour = initialHour,
         initialMinute = initialMinute,
-        is24Hour = true
+        is24Hour = false
     )
     
     TimePickerDialog(
@@ -2200,6 +2349,295 @@ fun DialTimePickerDialog(
                 timeSelectorUnselectedContentColor = MonospaceText
             )
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BlockSlotEditor(
+    index: Int,
+    block: VowBlock,
+    installedApps: List<Pair<String, String>>,
+    isLocked: Boolean,
+    showToast: (String) -> Unit,
+    onBlockChange: (VowBlock) -> Unit,
+    onTimePickerTrigger: (String) -> Unit,
+    onRemoveSlot: (() -> Unit)?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, OutlineAccent)
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "BLOCK SLOT #${index + 1}",
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Custom Name text field
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("NAME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            BasicTextField(
+                value = block.name,
+                onValueChange = { newName ->
+                    onBlockChange(block.copy(name = newName))
+                },
+                enabled = !isLocked,
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                    fontWeight = FontWeight.Bold
+                ),
+                cursorBrush = SolidColor(MonospaceText),
+                modifier = Modifier
+                    .weight(1f)
+                    .border(1.dp, OutlineAccent)
+                    .background(MutedSurface)
+                    .padding(6.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Enabled Checkbox Row with M3 Switch
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    val newEnabled = !block.isEnabled
+                    if (isLocked && block.isEnabled && !newEnabled) {
+                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                    } else {
+                        onBlockChange(block.copy(isEnabled = newEnabled))
+                    }
+                }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "ENABLED",
+                color = if (block.isEnabled) MonospaceText else SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Switch(
+                checked = block.isEnabled,
+                onCheckedChange = { newEnabled ->
+                    if (isLocked && block.isEnabled && !newEnabled) {
+                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                    } else {
+                        onBlockChange(block.copy(isEnabled = newEnabled))
+                    }
+                },
+                thumbContent = null,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = LightGraphiteBg,
+                    checkedTrackColor = MonospaceText,
+                    checkedBorderColor = OutlineAccent,
+                    uncheckedThumbColor = OutlineAccent,
+                    uncheckedTrackColor = Color.Transparent,
+                    uncheckedBorderColor = OutlineAccent,
+                    disabledCheckedThumbColor = OutlineAccent,
+                    disabledCheckedTrackColor = MutedSurface,
+                    disabledUncheckedThumbColor = MutedSurface,
+                    disabledUncheckedTrackColor = Color.Transparent
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Start Time
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("START: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Box(
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(30.dp)
+                    .border(1.dp, OutlineAccent)
+                    .background(MutedSurface)
+                    .clickable(enabled = !isLocked) {
+                        onTimePickerTrigger("START")
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = formatTimeAmPm(block.startHour, block.startMin),
+                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // End Time
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("END:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Box(
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(30.dp)
+                    .border(1.dp, OutlineAccent)
+                    .background(MutedSurface)
+                    .clickable(enabled = !isLocked) {
+                        onTimePickerTrigger("END")
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = formatTimeAmPm(block.endHour, block.endMin),
+                    color = if (!isLocked) MonospaceText else SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Target Applications
+        Text(
+            text = "TARGET APPLICATIONS",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        var appDropdownExpanded by remember { mutableStateOf(false) }
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .border(1.dp, OutlineAccent)
+                    .background(MutedSurface)
+                    .clickable(enabled = !isLocked) { appDropdownExpanded = true }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "+ SELECT APPLICATION",
+                    color = MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "v",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp
+                )
+            }
+
+            DropdownMenu(
+                expanded = appDropdownExpanded,
+                onDismissRequest = { appDropdownExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .heightIn(max = 250.dp)
+                    .background(MutedSurface)
+                    .border(1.dp, OutlineAccent)
+            ) {
+                installedApps.filter { it.first != "All Social Media" }.forEach { (pkg, label) ->
+                    DropdownMenuItem(
+                        text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
+                        onClick = {
+                            if (!block.targetApps.contains(pkg)) {
+                                onBlockChange(block.copy(targetApps = block.targetApps + pkg))
+                            }
+                            appDropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        if (block.targetApps.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                block.targetApps.forEach { pkg ->
+                    val label = if (pkg == "All Social Media") {
+                        "All Social Media"
+                    } else {
+                        installedApps.find { it.first == pkg }?.second ?: pkg
+                    }
+                    InputChip(
+                        text = label,
+                        onRemove = {
+                            if (isLocked) {
+                                showToast("Error: Target applications cannot be removed while locked.")
+                            } else {
+                                onBlockChange(block.copy(targetApps = block.targetApps - pkg))
+                            }
+                        },
+                        enabled = !isLocked
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Specific Domain
+        Text(
+            text = "SPECIFIC DOMAIN",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        MonospaceTextField(
+            value = block.specificDomain,
+            onValueChange = { newDomain ->
+                onBlockChange(block.copy(specificDomain = newDomain))
+            },
+            placeholder = "e.g. youtube.com",
+            enabled = !isLocked
+        )
+
+        // Remove block button
+        if (onRemoveSlot != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "[ REMOVE BLOCK SLOT ]",
+                color = LockedRed,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clickable { onRemoveSlot() }
+                    .padding(vertical = 4.dp)
+            )
+        }
     }
 }
 
@@ -2270,256 +2708,28 @@ fun QuietHoursConfigDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 currentBlocks.forEachIndexed { index, block ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, OutlineAccent)
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = "BLOCK SLOT #${index + 1}",
-                            color = MonospaceText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Custom Name text field
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("NAME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            BasicTextField(
-                                value = block.name,
-                                onValueChange = { newName ->
-                                    currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(name = newName) else it }
-                                },
-                                enabled = !isLocked,
-                                textStyle = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                cursorBrush = SolidColor(MonospaceText),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface)
-                                    .padding(6.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Enabled Checkbox Row with M3 Switch
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val newEnabled = !block.isEnabled
-                                    if (isLocked && block.isEnabled && !newEnabled) {
-                                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
-                                    } else {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(isEnabled = newEnabled) else it }
-                                    }
-                                }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "ENABLED",
-                                color = if (block.isEnabled) MonospaceText else SubtextGrey,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Switch(
-                                checked = block.isEnabled,
-                                onCheckedChange = { newEnabled ->
-                                    if (isLocked && block.isEnabled && !newEnabled) {
-                                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
-                                    } else {
-                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(isEnabled = newEnabled) else it }
-                                    }
-                                },
-                                thumbContent = null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = LightGraphiteBg,
-                                    checkedTrackColor = MonospaceText,
-                                    checkedBorderColor = OutlineAccent,
-                                    uncheckedThumbColor = OutlineAccent,
-                                    uncheckedTrackColor = Color.Transparent,
-                                    uncheckedBorderColor = OutlineAccent,
-                                    disabledCheckedThumbColor = OutlineAccent,
-                                    disabledCheckedTrackColor = MutedSurface,
-                                    disabledUncheckedThumbColor = MutedSurface,
-                                    disabledUncheckedTrackColor = Color.Transparent
-                                )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Start Time (HH:MM)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("START: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .width(70.dp)
-                                    .height(30.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface)
-                                    .clickable(enabled = !isLocked) {
-                                        timePickerTarget = Pair(block.id, "START")
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = String.format("%02d:%02d", block.startHour, block.startMin),
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // End Time (HH:MM)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("END:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .width(70.dp)
-                                    .height(30.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface)
-                                    .clickable(enabled = !isLocked) {
-                                        timePickerTarget = Pair(block.id, "END")
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = String.format("%02d:%02d", block.endHour, block.endMin),
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Target Applications
-                        Text(
-                            text = "TARGET APPLICATIONS",
-                            color = SubtextGrey,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(100.dp)
-                                .border(1.dp, OutlineAccent)
-                                .background(MutedSurface)
-                                .padding(4.dp)
-                        ) {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                items(installedApps.filter { it.first != "All Social Media" }) { (pkg, label) ->
-                                    val isChecked = block.targetApps.contains(pkg)
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                if (isLocked) {
-                                                    if (isChecked) {
-                                                        showToast("Error: Target applications cannot be removed while locked.")
-                                                    } else {
-                                                        val newApps = block.targetApps + pkg
-                                                        currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(targetApps = newApps) else it }
-                                                    }
-                                                } else {
-                                                    val newApps = if (isChecked) block.targetApps - pkg else block.targetApps + pkg
-                                                    currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(targetApps = newApps) else it }
-                                                }
-                                            }
-                                            .padding(vertical = 4.dp, horizontal = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = if (isChecked) "[x] " else "[ ] ",
-                                            color = MonospaceText,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp
-                                        )
-                                        Text(
-                                            text = "$label ($pkg)",
-                                            color = MonospaceText,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp
-                                        )
-                                    }
+                    BlockSlotEditor(
+                        index = index,
+                        block = block,
+                        installedApps = installedApps,
+                        isLocked = isLocked,
+                        showToast = showToast,
+                        onBlockChange = { updatedBlock ->
+                            currentBlocks = currentBlocks.map { if (it.id == block.id) updatedBlock else it }
+                        },
+                        onTimePickerTrigger = { type ->
+                            timePickerTarget = Pair(block.id, type)
+                        },
+                        onRemoveSlot = if (currentBlocks.size > 1) {
+                            {
+                                if (isLocked) {
+                                    showToast("Error: Scheduled blocks cannot be removed while locked.")
+                                } else {
+                                    currentBlocks = currentBlocks.filter { it.id != block.id }
                                 }
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Specific Domain
-                        Text(
-                            text = "SPECIFIC DOMAIN",
-                            color = SubtextGrey,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        MonospaceTextField(
-                            value = block.specificDomain,
-                            onValueChange = { newDomain ->
-                                currentBlocks = currentBlocks.map { if (it.id == block.id) it.copy(specificDomain = newDomain) else it }
-                            },
-                            placeholder = "e.g. youtube.com",
-                            enabled = !isLocked
-                        )
-
-                        // Remove block button
-                        if (currentBlocks.size > 1) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "[ REMOVE BLOCK SLOT ]",
-                                color = LockedRed,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .clickable {
-                                        if (isLocked) {
-                                            showToast("Error: Scheduled blocks cannot be removed while locked.")
-                                        } else {
-                                            currentBlocks = currentBlocks.filter { it.id != block.id }
-                                        }
-                                    }
-                                    .padding(vertical = 4.dp)
-                            )
-                        }
-                    }
+                        } else null
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
@@ -2569,6 +2779,12 @@ fun QuietHoursConfigDialog(
                 containerColor = MonospaceText,
                 contentColor = LightGraphiteBg,
                 shape = RectangleShape,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                    focusedElevation = 0.dp
+                ),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .sharpBorder(1.dp, OutlineAccent)
