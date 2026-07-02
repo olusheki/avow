@@ -385,7 +385,7 @@ private fun SlideScreenTime(
             color = when {
                 realityHours == null -> SubtextGrey
                 realityHours > EVERYONE_ELSE_HOURS + 0.3f -> LockedRed
-                realityHours < EVERYONE_ELSE_HOURS - 0.3f -> SageGood
+                realityHours < EVERYONE_ELSE_HOURS - 0.3f -> SageGreen
                 else -> SubtextGrey
             },
             fontFamily = FontFamily.Monospace,
@@ -789,7 +789,7 @@ private fun PermissionStatusCard(
         modifier = Modifier
             .fillMaxWidth()
             .background(MutedSurface)
-            .sharpBorder(1.dp, if (granted) SageGood else OutlineAccent)
+            .sharpBorder(1.dp, if (granted) SageGreen else OutlineAccent)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -815,7 +815,7 @@ private fun PermissionStatusCard(
         if (granted) {
             Text(
                 text = "GRANTED",
-                color = SageGood,
+                color = SageGreen,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
