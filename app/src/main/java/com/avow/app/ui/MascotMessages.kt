@@ -57,8 +57,11 @@ object MascotMessages {
     /**
      * Chooses a speech-bubble line from everything we can currently derive: the composed greeting,
      * the live vow countdown (when a timed vow is holding), and the zen-score trend (when at least
-     * two focus sessions have been recorded). [zenDelta] is the latest session's zen score minus
-     * the average of prior sessions, in points; null when there isn't enough history.
+     * two focus sessions have been recorded), and the week-over-week social-media trend (when a
+     * prior-week baseline exists). [zenDelta] is the latest session's zen score minus the average
+     * of prior sessions, in points; null when there isn't enough history. [reflectionPercent] is
+     * the signed change in social-media time versus last week (negative = using less); null when
+     * there's no meaningful baseline to compare against.
      */
     fun generateLine(
         isLocked: Boolean,
@@ -67,6 +70,7 @@ object MascotMessages {
         minutes: Int,
         seconds: Int,
         zenDelta: Int? = null,
+        reflectionPercent: Int? = null,
         random: Random = Random.Default
     ): String {
         val hasCountdown = isLocked && (days + hours + minutes + seconds) > 0
@@ -74,6 +78,7 @@ object MascotMessages {
             add(generateMessage(isLocked, random = random))
             if (hasCountdown) add(vowCountdownMessage(days, hours, minutes, seconds, random))
             if (zenDelta != null) add(zenScoreMessage(zenDelta))
+            if (reflectionPercent != null) add(reflectionMessage(reflectionPercent))
         }
         return candidates.random(random)
     }

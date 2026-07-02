@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import com.avow.app.receiver.DeviceAdmin
 import com.avow.app.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -894,6 +896,14 @@ fun VaultDashboard(
         }.collectAsState(initial = emptyList())
         val zenDelta = remember(sessions) { computeMascotZenDelta(sessions) }
 
+        // Week-over-week social-media trend for the reflection bubble ("you're using X% less than
+        // last week"). Read off the main thread; null until computed / when there's no baseline.
+        val reflectionPercent by produceState<Int?>(initialValue = null, dashContext) {
+            value = withContext(Dispatchers.IO) {
+                com.avow.app.util.SocialUsageStats.weekOverWeekPercentChange(dashContext)
+            }
+        }
+
         fun openBubble() {
             bubbleMessage = MascotMessages.generateLine(
                 isLocked = bindingVowActivated,
@@ -902,6 +912,7 @@ fun VaultDashboard(
                 minutes = minutes,
                 seconds = seconds,
                 zenDelta = zenDelta,
+                reflectionPercent = reflectionPercent,
                 random = Random.Default
             )
             bubbleVisible = true

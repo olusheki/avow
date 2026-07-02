@@ -102,6 +102,28 @@ class MascotMessagesTest {
     }
 
     @Test
+    fun generateLine_canSurfaceReflectionWhenBaselineAvailable() {
+        val seen = (0 until 100).any { seed ->
+            MascotMessages.generateLine(
+                isLocked = false, days = 0, hours = 0, minutes = 0, seconds = 0,
+                reflectionPercent = -25, random = Random(seed.toLong())
+            ).contains("screentime")
+        }
+        assertTrue(seen)
+    }
+
+    @Test
+    fun generateLine_omitsReflectionWhenBaselineNull() {
+        repeat(100) { seed ->
+            val line = MascotMessages.generateLine(
+                isLocked = false, days = 0, hours = 0, minutes = 0, seconds = 0,
+                reflectionPercent = null, random = Random(seed.toLong())
+            )
+            assertFalse(line.contains("screentime"))
+        }
+    }
+
+    @Test
     fun zenDelta_nullUntilTwoSessions_thenLatestVsPriorAverage() {
         assertNull(computeMascotZenDelta(emptyList()))
         assertNull(computeMascotZenDelta(listOf(session(zen = 80))))

@@ -1,7 +1,6 @@
 package com.avow.app.ui
 
 import android.app.AppOpsManager
-import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -947,32 +946,6 @@ private fun hasUsageStatsPermission(context: Context): Boolean {
     }
 }
 
-/** Package-name fragments that identify common social media apps. */
-private val SOCIAL_MEDIA_KEYWORDS = listOf(
-    "instagram", "tiktok", "musically", "trill",       // Instagram, TikTok (both variants)
-    "facebook", "katana",                               // Facebook
-    "twitter",                                          // X / Twitter
-    "snapchat", "reddit", "pinterest", "tumblr",
-    "youtube", "linkedin", "threads", "barcelona"       // Threads pkg = com.instagram.barcelona
-)
-
-private fun isSocialMediaPackage(pkg: String): Boolean {
-    val p = pkg.lowercase()
-    return SOCIAL_MEDIA_KEYWORDS.any { p.contains(it) }
-}
-
 /** Aggregates foreground time across social media apps only, over the last 24h, in hours. */
-private fun querySocialMediaHours(context: Context): Float {
-    return try {
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val end = System.currentTimeMillis()
-        val start = end - 24L * 60L * 60L * 1000L
-        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
-        val totalMs = stats
-            ?.filter { isSocialMediaPackage(it.packageName) }
-            ?.sumOf { it.totalTimeInForeground } ?: 0L
-        (totalMs / (1000f * 60f * 60f)).coerceIn(0f, 24f)
-    } catch (e: Exception) {
-        0f
-    }
-}
+private fun querySocialMediaHours(context: Context): Float =
+    com.avow.app.util.SocialUsageStats.queryLastDayHours(context)
