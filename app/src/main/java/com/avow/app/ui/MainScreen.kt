@@ -872,13 +872,13 @@ fun VaultDashboard(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             DashboardPanelButton(
-                title = "QUIET HOURS",
+                title = "SCHEDULED BLOCKS",
                 subtitle = "",
                 isActivated = quietHoursActivated,
                 onClick = onQuietHoursClick
             )
             DashboardPanelButton(
-                title = "SET USAGE LIMITS",
+                title = "USAGE LIMITS",
                 subtitle = "",
                 isActivated = usageLimitsActivated,
                 onClick = onSetUsageLimitsClick
