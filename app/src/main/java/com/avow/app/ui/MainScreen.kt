@@ -173,6 +173,9 @@ fun MainScreen(
             .background(LightGraphiteBg)
     ) {
         when (uiState.currentState) {
+            ScreenState.ONBOARDING -> {
+                OnboardingFlow(viewModel = viewModel)
+            }
             ScreenState.UNLOCKED_VAULT, ScreenState.LOCKED_VAULT -> {
                 VaultDashboard(
                     statusText = if (uiState.isVowActive) "LOCKED" else "UNLOCKED",
@@ -1096,13 +1099,13 @@ fun VaultDashboard(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             DashboardPanelButton(
-                title = "QUIET HOURS",
+                title = "SCHEDULED BLOCKS",
                 subtitle = "",
                 isActivated = quietHoursActivated,
                 onClick = onQuietHoursClick
             )
             DashboardPanelButton(
-                title = "SET USAGE LIMITS",
+                title = "USAGE LIMITS",
                 subtitle = "",
                 isActivated = usageLimitsActivated,
                 onClick = onSetUsageLimitsClick
@@ -1409,63 +1412,13 @@ fun ConfigurationWorkspace(
                 modifier = Modifier.padding(bottom = 6.dp)
             )
             
-            var domainInput by remember { mutableStateOf("") }
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    MonospaceTextField(
-                        value = domainInput,
-                        onValueChange = { domainInput = it },
-                        placeholder = "e.g. youtube.com",
-                        enabled = true
-                    )
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .border(1.dp, OutlineAccent)
-                        .background(DarkerSurfaceColor)
-                        .clickable {
-                            if (domainInput.isNotBlank()) {
-                                onDomainAdd(domainInput.trim())
-                                domainInput = ""
-                            }
-                        }
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "{ ADD }",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            
-            if (banDomainSet.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    banDomainSet.forEach { domain ->
-                        InputChip(
-                            text = domain,
-                            onRemove = { onDomainRemove(domain) },
-                            enabled = !isLocked
-                        )
-                    }
-                }
-            }
+            DomainSetEditor(
+                domains = banDomainSet.toList(),
+                onAdd = onDomainAdd,
+                onRemove = onDomainRemove,
+                canAdd = true,
+                canRemove = !isLocked
+            )
         }
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -2000,6 +1953,80 @@ fun InputChip(
 }
 
 /**
+ * Reusable multi-domain editor: text field + { ADD } button + removable chips.
+ * Shared by the global BAN DOMAIN SET, Usage Limits, and Scheduled Blocks so all three
+ * present the same interface. Each scope keeps its own independent list.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DomainSetEditor(
+    domains: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "e.g. youtube.com",
+    canAdd: Boolean = true,
+    canRemove: Boolean = true
+) {
+    var domainInput by remember { mutableStateOf("") }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                MonospaceTextField(
+                    value = domainInput,
+                    onValueChange = { domainInput = it },
+                    placeholder = placeholder,
+                    enabled = canAdd
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .height(44.dp)
+                    .sharpBorder(1.dp, OutlineAccent)
+                    .background(if (canAdd) DarkerSurfaceColor else MutedSurface)
+                    .clickable(enabled = canAdd) {
+                        val d = domainInput.trim().lowercase()
+                        if (d.isNotEmpty()) {
+                            onAdd(d)
+                            domainInput = ""
+                        }
+                    }
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "{ ADD }",
+                    color = if (canAdd) MonospaceText else SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        if (domains.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                domains.forEach { domain ->
+                    InputChip(
+                        text = domain,
+                        onRemove = if (canRemove) ({ onRemove(domain) }) else null,
+                        enabled = canRemove
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * Intrusion Intercept Block (State C).
  */
 @Composable
@@ -2441,12 +2468,21 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Specific Domain Textbox
-                MonospaceTextField(
-                    value = localSpecificDomain,
-                    onValueChange = { localSpecificDomain = it },
-                    placeholder = "e.g. youtube.com",
-                    enabled = !isLocked
+                // Specific Domains (multi-domain chip list)
+                DomainSetEditor(
+                    domains = com.avow.app.util.DomainUtil.parse(localSpecificDomain),
+                    onAdd = { domain ->
+                        localSpecificDomain = com.avow.app.util.DomainUtil.format(
+                            com.avow.app.util.DomainUtil.parse(localSpecificDomain) + domain
+                        )
+                    },
+                    onRemove = { domain ->
+                        localSpecificDomain = com.avow.app.util.DomainUtil.format(
+                            com.avow.app.util.DomainUtil.parse(localSpecificDomain) - domain
+                        )
+                    },
+                    canAdd = !isLocked,
+                    canRemove = !isLocked
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -2880,13 +2916,28 @@ fun BlockSlotEditor(
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(4.dp))
-        MonospaceTextField(
-            value = block.specificDomain,
-            onValueChange = { newDomain ->
-                onBlockChange(block.copy(specificDomain = newDomain))
+        DomainSetEditor(
+            domains = com.avow.app.util.DomainUtil.parse(block.specificDomain),
+            onAdd = { domain ->
+                onBlockChange(
+                    block.copy(
+                        specificDomain = com.avow.app.util.DomainUtil.format(
+                            com.avow.app.util.DomainUtil.parse(block.specificDomain) + domain
+                        )
+                    )
+                )
             },
-            placeholder = "e.g. youtube.com",
-            enabled = !isLocked
+            onRemove = { domain ->
+                onBlockChange(
+                    block.copy(
+                        specificDomain = com.avow.app.util.DomainUtil.format(
+                            com.avow.app.util.DomainUtil.parse(block.specificDomain) - domain
+                        )
+                    )
+                )
+            },
+            canAdd = !isLocked,
+            canRemove = !isLocked
         )
 
         // Remove block button

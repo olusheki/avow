@@ -125,6 +125,7 @@ class MainViewModel @JvmOverloads constructor(
                 val targetAppSet = prefs[VowDataStore.TARGET_APP_SET] ?: emptySet()
                 val specificDomain = prefs[VowDataStore.SPECIFIC_DOMAIN] ?: ""
                 val isCollectiveLimit = prefs[VowDataStore.IS_COLLECTIVE_LIMIT] ?: false
+                val isOnboardingCompleted = prefs[VowDataStore.IS_ONBOARDING_COMPLETED] ?: false
 
                 val dpm = getApplication<Application>().getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val isDeviceOwner = dpm.isDeviceOwnerApp(getApplication<Application>().packageName)
@@ -141,6 +142,8 @@ class MainViewModel @JvmOverloads constructor(
                     currentState = ScreenState.TEMPORARY_LOCKOUT
                 } else if (isVowActive) {
                     currentState = ScreenState.LOCKED_VAULT
+                } else if (!isOnboardingCompleted) {
+                    currentState = ScreenState.ONBOARDING
                 }
 
                 if (isVowActive) {
@@ -253,6 +256,7 @@ class MainViewModel @JvmOverloads constructor(
                             currentState
                         },
                         isDeviceOwner = isDeviceOwner,
+                        isOnboardingCompleted = isOnboardingCompleted,
                         isLoaded = true
                     )
                 }
@@ -398,6 +402,23 @@ class MainViewModel @JvmOverloads constructor(
 
     fun setScreenState(state: ScreenState) {
         updateState { copy(previousState = currentState, currentState = state) }
+    }
+
+    /**
+     * Persists any selections made during onboarding, marks onboarding as completed,
+     * and transitions to the unlocked vault dashboard.
+     */
+    fun completeOnboarding() {
+        updateState { copy(isOnboardingCompleted = true, currentState = ScreenState.UNLOCKED_VAULT) }
+        // Persist the blocking selections (domains / apps / vow mode) chosen during onboarding.
+        saveConfigToDataStore()
+        viewModelScope.launch {
+            try {
+                vowDataStore.setOnboardingCompleted(true)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to persist onboarding completion", e)
+            }
+        }
     }
     
     fun requestDeactivation() {

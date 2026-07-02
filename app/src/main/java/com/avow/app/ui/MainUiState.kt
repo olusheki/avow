@@ -3,6 +3,7 @@ package com.avow.app.ui
 import com.avow.app.model.VowBlock
 
 enum class ScreenState {
+    ONBOARDING,
     UNLOCKED_VAULT,
     LOCKED_VAULT,
     CONFIGURATION,
@@ -93,5 +94,6 @@ data class MainUiState(
     val vowInitialDurationSeconds: Long = 0L,
 
     val isLoaded: Boolean = false,
-    val isDeviceOwner: Boolean = false
+    val isDeviceOwner: Boolean = false,
+    val isOnboardingCompleted: Boolean = false
 )
