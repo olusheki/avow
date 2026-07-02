@@ -231,14 +231,14 @@ class BlockerService : AccessibilityService() {
                 }
                 if (isBanned) return false
                 
-                if (specificDomain.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
+                if (com.avow.app.util.DomainUtil.matches(activeUrl, specificDomain)) {
                     return false
                 }
-                
+
                 for (block in vowBlocks) {
-                    if (block.isEnabled && block.specificDomain.isNotEmpty() && 
-                        isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin) && 
-                        activeUrl.contains(block.specificDomain, ignoreCase = true)) {
+                    if (block.isEnabled &&
+                        isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin) &&
+                        com.avow.app.util.DomainUtil.matches(activeUrl, block.specificDomain)) {
                         return false
                     }
                 }
@@ -368,7 +368,7 @@ class BlockerService : AccessibilityService() {
                     }
                     if (block.specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
                         val activeUrl = currentBrowserUrl
-                        if (activeUrl.isNotEmpty() && activeUrl.contains(block.specificDomain, ignoreCase = true)) {
+                        if (activeUrl.isNotEmpty() && com.avow.app.util.DomainUtil.matches(activeUrl, block.specificDomain)) {
                             triggerBlackoutOverlay()
                             return
                         }
@@ -548,7 +548,7 @@ class BlockerService : AccessibilityService() {
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {
         if (specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
             val activeUrl = currentBrowserUrl
-            if (activeUrl.isNotEmpty() && activeUrl.contains(specificDomain, ignoreCase = true)) {
+            if (activeUrl.isNotEmpty() && com.avow.app.util.DomainUtil.matches(activeUrl, specificDomain)) {
                 return true
             }
         }
