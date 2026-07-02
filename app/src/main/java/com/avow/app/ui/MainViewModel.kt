@@ -99,6 +99,7 @@ class MainViewModel @JvmOverloads constructor(
                 val doomscrollTargetAppSet = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
                 val doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
                 val doomscrollAllowanceMinutes = prefs[VowDataStore.DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
+                val doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
                 
                 var vowBlocks = VowBlock.deserializeList(prefs[VowDataStore.VOW_BLOCKS_JSON] ?: "")
                 if (vowBlocks.isEmpty()) {
@@ -133,12 +134,17 @@ class MainViewModel @JvmOverloads constructor(
                 var minutes = 0
                 var seconds = 0
                 var finalIsVowActive = isVowActive
-                var currentState = ScreenState.UNLOCKED_VAULT
-
                 val savedRemaining = prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L
+                val currentUptime = SystemClock.elapsedRealtime()
+                var currentState = ScreenState.UNLOCKED_VAULT
+                if (temporaryLockoutEndTime > currentUptime) {
+                    currentState = ScreenState.TEMPORARY_LOCKOUT
+                } else if (isVowActive) {
+                    currentState = ScreenState.LOCKED_VAULT
+                }
+
                 if (isVowActive) {
                     val lastUptime = prefs[VowDataStore.LAST_SYSTEM_UPTIME_MILLIS] ?: 0L
-                    val currentUptime = SystemClock.elapsedRealtime()
                     
                     val finalRemaining = if (savedRemaining > 0) {
                         VowValidator.calculateRemainingSeconds(currentUptime, lastUptime, savedRemaining)
@@ -150,8 +156,10 @@ class MainViewModel @JvmOverloads constructor(
                         days = (finalRemaining / 86400).toInt()
                         hours = ((finalRemaining % 86400) / 3600).toInt()
                         minutes = ((finalRemaining % 3600) / 60).toInt()
+                        if (currentState != ScreenState.TEMPORARY_LOCKOUT) {
+                            currentState = ScreenState.LOCKED_VAULT
+                        }
                         seconds = (finalRemaining % 60).toInt()
-                        currentState = ScreenState.LOCKED_VAULT
                     } else {
                         finalIsVowActive = false
                         DeviceAdmin.assertBindingVow(
@@ -218,6 +226,7 @@ class MainViewModel @JvmOverloads constructor(
                         doomscrollTargetAppSet = doomscrollTargetAppSet,
                         doomscrollCooldownMinutes = doomscrollCooldownMinutes,
                         doomscrollAllowanceMinutes = doomscrollAllowanceMinutes,
+                        doomscrollAccumulatedMs = doomscrollAccumulatedMs,
                         frozenDoomscrollShieldEnabled = doomscrollShieldEnabled,
                         frozenDoomscrollAllTime = doomscrollAllTime,
                         frozenDoomscrollStartHour = doomscrollStartHour,
@@ -234,7 +243,15 @@ class MainViewModel @JvmOverloads constructor(
                         vowStartTimeMs = vowStartTimeMs,
                         vowInitialDurationSeconds = vowInitialDurationSeconds,
                         temporaryLockoutEndTime = temporaryLockoutEndTime,
-                        currentState = currentState,
+                        currentState = if (state.currentState == ScreenState.INTRUSION_INTERCEPT || state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
+                            if (currentState == ScreenState.TEMPORARY_LOCKOUT) {
+                                currentState
+                            } else {
+                                state.currentState
+                            }
+                        } else {
+                            currentState
+                        },
                         isDeviceOwner = isDeviceOwner,
                         isLoaded = true
                     )
@@ -254,9 +271,9 @@ class MainViewModel @JvmOverloads constructor(
                 val state = _uiState.value
                 
                 // Temporary lockout exit check
-                if (state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
+                if (state.currentState == ScreenState.TEMPORARY_LOCKOUT && state.temporaryLockoutEndTime > 0L) {
                     if (SystemClock.elapsedRealtime() >= state.temporaryLockoutEndTime) {
-                        updateState { copy(currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT) }
+                        updateState { copy(currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT, temporaryLockoutEndTime = 0L) }
                     }
                 }
                 
@@ -355,7 +372,6 @@ class MainViewModel @JvmOverloads constructor(
                     vowBlocksJson = VowBlock.serializeList(state.vowBlocks),
                     vowStartTimeMs = state.vowStartTimeMs,
                     vowInitialDurationSeconds = state.vowInitialDurationSeconds,
-                    temporaryLockoutEndTime = state.temporaryLockoutEndTime,
                     doomscrollShieldEnabled = state.doomscrollShieldEnabled,
                     doomscrollAllTime = state.doomscrollAllTime,
                     doomscrollStartHour = state.doomscrollStartHour,

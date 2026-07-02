@@ -325,7 +325,6 @@ class VowDataStore(private val context: Context) {
         deactivationRequestTime: Long,
         isCollectiveLimit: Boolean,
         vowBlocksJson: String,
-        temporaryLockoutEndTime: Long = 0L,
         vowStartTimeMs: Long = 0L,
         vowInitialDurationSeconds: Long = 0L,
         doomscrollShieldEnabled: Boolean = false,
@@ -369,7 +368,6 @@ class VowDataStore(private val context: Context) {
             preferences[DEACTIVATION_REQUEST_TIME] = deactivationRequestTime
             preferences[IS_COLLECTIVE_LIMIT] = isCollectiveLimit
             preferences[VOW_BLOCKS_JSON] = vowBlocksJson
-            preferences[TEMPORARY_LOCKOUT_END_TIME] = temporaryLockoutEndTime
             preferences[VOW_START_TIME_MS] = vowStartTimeMs
             preferences[VOW_INITIAL_DURATION_SECONDS] = vowInitialDurationSeconds
             preferences[DOOMSCROLL_SHIELD_ENABLED] = doomscrollShieldEnabled

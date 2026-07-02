@@ -23,13 +23,20 @@ aVow Misc.md
 aVow Next Steps.md
 aVow Project Specification.md
 aVow ReadMe.md
+DEPLOYMENT_AND_FEATURE_PLAN.md
 
 
 # HTML code extraction
 code.html
 mockups.html
 generate_screenshots.js
+avow_course.html
+design-explore.html
+design-explore-2.html
 
 # Course materials and agent reference
 avow-course/
 README_AGENT.md
+
+# Debug/crash scratch files
+crash.txt

@@ -28,6 +28,8 @@ class BlockerService : AccessibilityService() {
         private val SOCIAL_MEDIA_PACKAGES = setOf(
             "com.instagram.android",
             "com.tiktok.android",
+            "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill",
             "com.twitter.android",
             "com.twitter.android.lite",
             "com.facebook.katana",
@@ -148,7 +150,10 @@ class BlockerService : AccessibilityService() {
                 specificDomain = prefs[VowDataStore.SPECIFIC_DOMAIN] ?: ""
                 lastIntervalStartMs = prefs[VowDataStore.LAST_INTERVAL_START_MS] ?: 0L
                 isCollectiveLimit = prefs[VowDataStore.IS_COLLECTIVE_LIMIT] ?: false
-                doomscrollLastClosedTime = prefs[VowDataStore.DOOMSCROLL_LAST_CLOSED_TIME] ?: 0L
+                val savedLastClosed = prefs[VowDataStore.DOOMSCROLL_LAST_CLOSED_TIME] ?: 0L
+                if (doomscrollLastClosedTime == 0L && savedLastClosed > 0L) {
+                    doomscrollLastClosedTime = savedLastClosed
+                }
                 doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
                 temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
@@ -276,36 +281,40 @@ class BlockerService : AccessibilityService() {
 
             // Intercept any attempt to launch target apps during temporary lockout
             if (SystemClock.elapsedRealtime() < temporaryLockoutEndTime) {
-                if (isTargetAppPackage(pkgName) || isBrowserWithSpecificDomain(pkgName)) {
+                if (isDoomscrollTargetApp(pkgName)) {
                     triggerLockoutOverlay()
                     return
                 }
             }
 
-            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                val oldForeground = currentForegroundPackage
-                currentForegroundPackage = pkgName
-                handleForegroundPackageChange(oldForeground, pkgName)
+            var pkgChanged = false
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+                event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+                if (pkgName.isNotEmpty() && pkgName != currentForegroundPackage) {
+                    val oldForeground = currentForegroundPackage
+                    currentForegroundPackage = pkgName
+                    handleForegroundPackageChange(oldForeground, pkgName)
+                    pkgChanged = true
+                }
             }
 
-            // Settings app interception: redirect to HOME if vow is active or deactivation request cooling-off is active
             if (SETTINGS_PACKAGES.contains(pkgName)) {
                 val isCoolingOff = deactivationRequestTime > 0L &&
                         (System.currentTimeMillis() - deactivationRequestTime) < 24L * 3600L * 1000L
-                if (isVowActive || isCoolingOff) {
+                if (isCoolingOff) {
                     performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                     return
                 }
             }
 
-            if (!isVowActive) return
-
-            // Re-evaluate tracking job on window changes or URL content changes inside browsers
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+                pkgChanged ||
                 (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && 
                  (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser"))) {
                 manageTrackingJob()
             }
+
+            if (!isVowActive) return
 
             // 1. Check profile stubs (Samsung Secure Folder & Android 15 Private Space)
             if ((secureFolderEnabled && pkgName == "com.samsung.knox.securefolder") ||
@@ -557,11 +566,9 @@ class BlockerService : AccessibilityService() {
         
         val result = doomscrollTracker.tick(isRestrictionActive, allowanceMs)
         
-        // Save the updated accumulatedMs every few seconds to prevent data loss on crash
-        if (doomscrollTracker.accumulatedMs % 10000L == 0L) {
-            serviceScope.launch {
-                vowDataStore.saveDoomscrollAccumulatedMs(doomscrollTracker.accumulatedMs)
-            }
+        // Save the updated accumulatedMs every second so the UI ticker works properly
+        serviceScope.launch {
+            vowDataStore.saveDoomscrollAccumulatedMs(doomscrollTracker.accumulatedMs)
         }
         
         when (result) {
@@ -569,7 +576,6 @@ class BlockerService : AccessibilityService() {
                 serviceScope.launch {
                     val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
                     vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + cooldownMs)
-                    vowDataStore.saveDoomscrollAccumulatedMs(0L)
                 }
                 withContext(Dispatchers.Main) {
                     triggerLockoutOverlay()
@@ -639,13 +645,21 @@ class BlockerService : AccessibilityService() {
             lastClosedTime = doomscrollLastClosedTime
         )
         if (result.saveClosedTime) {
+            val closedTime = System.currentTimeMillis()
+            doomscrollLastClosedTime = closedTime
             serviceScope.launch {
-                vowDataStore.saveDoomscrollLastClosedTime(System.currentTimeMillis())
-                vowDataStore.saveDoomscrollAccumulatedMs(result.newAccumulatedMs)
+                vowDataStore.saveDoomscrollLastClosedTime(closedTime)
+                // We don't save accumulatedMs if it's currently 0 to prevent overwriting max value
+                if (result.newAccumulatedMs > 0L) {
+                    vowDataStore.saveDoomscrollAccumulatedMs(result.newAccumulatedMs)
+                }
             }
         } else if (result.resetAccumulated) {
-            serviceScope.launch {
-                vowDataStore.saveDoomscrollAccumulatedMs(0L)
+            // Only reset accumulated if temporary lockout is not active
+            if (SystemClock.elapsedRealtime() >= temporaryLockoutEndTime) {
+                serviceScope.launch {
+                    vowDataStore.saveDoomscrollAccumulatedMs(0L)
+                }
             }
         }
     }

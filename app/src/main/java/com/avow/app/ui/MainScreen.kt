@@ -48,6 +48,9 @@ import com.avow.app.receiver.DeviceAdmin
 import com.avow.app.ui.theme.*
 import kotlinx.coroutines.delay
 import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.util.Log
@@ -207,15 +210,19 @@ fun MainScreen(
                 )
             }
             ScreenState.CONFIGURATION -> {
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { isGranted ->
+                    if (!isGranted) {
+                        viewModel.showToast("Notification permission denied. Doomscroll warning will not appear.")
+                    }
+                }
                 ConfigurationWorkspace(
                     secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
-                        else {
-                            viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
-                            viewModel.saveConfigToDataStore()
-                        }
+                        viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
+                        viewModel.saveConfigToDataStore()
                     },
                     privateSpaceEnabled = uiState.privateSpaceEnabled,
                     onPrivateSpaceToggle = {
@@ -304,11 +311,10 @@ fun MainScreen(
                     doomscrollShieldEnabled = uiState.doomscrollShieldEnabled,
                     onDoomscrollShieldToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) {
-                            viewModel.showToast("Error: Doomscroll Shield cannot be toggled while locked.")
-                        } else {
-                            viewModel.updateState { copy(doomscrollShieldEnabled = !doomscrollShieldEnabled) }
-                            viewModel.saveConfigToDataStore()
+                        viewModel.updateState { copy(doomscrollShieldEnabled = !doomscrollShieldEnabled) }
+                        viewModel.saveConfigToDataStore()
+                        if (!uiState.doomscrollShieldEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                         }
                     },
                     doomscrollAllTime = uiState.doomscrollAllTime,
@@ -375,6 +381,7 @@ fun MainScreen(
                         }
                     },
                     doomscrollAllowanceMinutes = uiState.doomscrollAllowanceMinutes,
+                    doomscrollAccumulatedMs = uiState.doomscrollAccumulatedMs,
                     onDoomscrollAllowanceMinutesUpdate = { allowance ->
                         if (uiState.isVowActive) {
                             if (allowance > uiState.frozenDoomscrollAllowanceMinutes) {
@@ -1104,6 +1111,8 @@ fun ConfigurationWorkspace(
     doomscrollCooldownMinutes: Int,
     onDoomscrollCooldownMinutesUpdate: (Int) -> Unit,
     doomscrollAllowanceMinutes: Int,
+    doomscrollAccumulatedMs: Long = 0L,
+    temporaryLockoutEndTime: Long = 0L,
     onDoomscrollAllowanceMinutesUpdate: (Int) -> Unit,
     installedApps: List<Pair<String, String>>,
     deactivationRequestTime: Long = 0L,
@@ -1137,17 +1146,8 @@ fun ConfigurationWorkspace(
                 .height(60.dp)
                 .padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.End
         ) {
-            Text(
-                text = if (isLocked) "[ aVow // STATUS: LOCKED ]" else "",
-                color = if (isLocked) LockedRed else MonospaceText,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-            
             Text(
                 text = "< BACK",
                 color = SubtextGrey,
@@ -1498,6 +1498,36 @@ fun ConfigurationWorkspace(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val currentUptime = SystemClock.elapsedRealtime()
+                    if (temporaryLockoutEndTime > currentUptime) {
+                        val remainingSec = (temporaryLockoutEndTime - currentUptime) / 1000
+                        Text(
+                            text = "LOCKOUT: ${remainingSec / 60}m ${remainingSec % 60}s",
+                            color = Color(0xFFE57373),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    } else if (doomscrollAccumulatedMs > 0L) {
+                        Text(
+                            text = "LIVE TICKER: ${doomscrollAccumulatedMs / 1000}s",
+                            color = OutlineAccent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "LIVE TICKER: 0s",
+                            color = OutlineAccent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
                 }
 
                 // App Picker / target apps list
@@ -1819,20 +1849,21 @@ fun UsageLimitsConfigDialog(
     var localIsCollectiveLimit by remember { mutableStateOf(isCollectiveLimit) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(LightGraphiteBg)
                 .border(1.dp, OutlineAccent)
-                .padding(20.dp)
         ) {
             val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .verticalScroll(scrollState)
+                    .padding(20.dp)
             ) {
-                // Header Row
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2192,42 +2223,49 @@ fun UsageLimitsConfigDialog(
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
-
-                Spacer(modifier = Modifier.height(72.dp))
             }
 
-            ExtendedFloatingActionButton(
-                onClick = {
-                    onUpdate(
-                        localEnabled,
-                        localAllowedValue,
-                        localAllowedUnit,
-                        localSelectedInterval,
-                        localTargetAppSet,
-                        localSpecificDomain,
-                        localIsCollectiveLimit
-                    )
-                },
-                containerColor = MonospaceText,
-                contentColor = LightGraphiteBg,
-                shape = RectangleShape,
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp,
-                    hoveredElevation = 0.dp,
-                    focusedElevation = 0.dp
-                ),
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .sharpBorder(1.dp, OutlineAccent)
+                    .fillMaxWidth()
+                    .background(LightGraphiteBg)
+                    .drawBehind { 
+                        drawLine(OutlineAccent, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+                    }
+                    .padding(20.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Text(
-                    text = "UPDATE",
-                    color = Color(0xFF1C1C1C),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        onUpdate(
+                            localEnabled,
+                            localAllowedValue,
+                            localAllowedUnit,
+                            localSelectedInterval,
+                            localTargetAppSet,
+                            localSpecificDomain,
+                            localIsCollectiveLimit
+                        )
+                    },
+                    containerColor = MonospaceText,
+                    contentColor = LightGraphiteBg,
+                    shape = RectangleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        hoveredElevation = 0.dp,
+                        focusedElevation = 0.dp
+                    ),
+                    modifier = Modifier.sharpBorder(1.dp, OutlineAccent)
+                ) {
+                    Text(
+                        text = "UPDATE",
+                        color = Color(0xFF1C1C1C),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -2339,10 +2377,10 @@ fun DialTimePickerDialog(
                 clockDialUnselectedContentColor = MonospaceText,
                 selectorColor = MonospaceText,
                 periodSelectorBorderColor = OutlineAccent,
-                periodSelectorSelectedContainerColor = MutedSurface,
-                periodSelectorUnselectedContainerColor = Color.Transparent,
-                periodSelectorSelectedContentColor = MonospaceText,
-                periodSelectorUnselectedContentColor = SubtextGrey,
+                periodSelectorSelectedContainerColor = Color(0xFF2E2E2E), // Darker when selected
+                periodSelectorUnselectedContainerColor = MutedSurface, // Lighter when unselected
+                periodSelectorSelectedContentColor = MonospaceText, // White text on dark selected container
+                periodSelectorUnselectedContentColor = Color(0xFF1C1C1C), // Dark text on light unselected container
                 timeSelectorSelectedContainerColor = MutedSurface,
                 timeSelectorUnselectedContainerColor = MutedSurface,
                 timeSelectorSelectedContentColor = MonospaceText,
@@ -2657,19 +2695,20 @@ fun QuietHoursConfigDialog(
     var currentBlocks by remember { mutableStateOf(vowBlocks) }
     var timePickerTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     Dialog(onDismissRequest = onDismiss) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
                 .background(LightGraphiteBg)
                 .border(1.dp, OutlineAccent)
-                .padding(16.dp)
         ) {
             val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .weight(1f)
                     .verticalScroll(scrollState)
+                    .padding(16.dp)
             ) {
                 // Header
                 Row(
@@ -2771,31 +2810,39 @@ fun QuietHoursConfigDialog(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                Spacer(modifier = Modifier.height(72.dp))
             }
 
-            ExtendedFloatingActionButton(
-                onClick = { onUpdate(currentBlocks) },
-                containerColor = MonospaceText,
-                contentColor = LightGraphiteBg,
-                shape = RectangleShape,
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp,
-                    hoveredElevation = 0.dp,
-                    focusedElevation = 0.dp
-                ),
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .sharpBorder(1.dp, OutlineAccent)
+                    .fillMaxWidth()
+                    .background(LightGraphiteBg)
+                    .drawBehind { 
+                        drawLine(OutlineAccent, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+                    }
+                    .padding(16.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Text(
-                    text = "UPDATE",
-                    color = Color(0xFF1C1C1C),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                ExtendedFloatingActionButton(
+                    onClick = { onUpdate(currentBlocks) },
+                    containerColor = MonospaceText,
+                    contentColor = LightGraphiteBg,
+                    shape = RectangleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        hoveredElevation = 0.dp,
+                        focusedElevation = 0.dp
+                    ),
+                    modifier = Modifier.sharpBorder(1.dp, OutlineAccent)
+                ) {
+                    Text(
+                        text = "UPDATE",
+                        color = Color(0xFF1C1C1C),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // Time Picker Dialog overlay

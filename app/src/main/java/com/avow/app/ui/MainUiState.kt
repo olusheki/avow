@@ -59,6 +59,7 @@ data class MainUiState(
     val doomscrollTargetAppSet: Set<String> = emptySet(),
     val doomscrollCooldownMinutes: Int = 60,
     val doomscrollAllowanceMinutes: Int = 15,
+    val doomscrollAccumulatedMs: Long = 0L,
 
     val frozenDoomscrollShieldEnabled: Boolean = false,
     val frozenDoomscrollAllTime: Boolean = false,
