@@ -5,8 +5,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
@@ -31,10 +35,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,7 +65,9 @@ import android.content.ComponentName
 import android.util.Log
 import com.avow.app.service.BlockerService
 import com.avow.app.data.VowDataStore
+import com.avow.app.data.history.VowSession
 import com.avow.app.model.VowBlock
+import kotlin.random.Random
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -638,7 +649,8 @@ fun TemporaryLockoutOverlay(
 @Composable
 fun SmileyFaceOutline(
     modifier: Modifier = Modifier,
-    color: Color = OutlineAccent
+    color: Color = OutlineAccent,
+    mouthOpen: Boolean = false
 ) {
     Canvas(modifier = modifier) {
         val minDim = size.minDimension
@@ -660,7 +672,7 @@ fun SmileyFaceOutline(
             center = Offset(75f * scale, 82f * scale),
             style = Stroke(width = strokeWidth)
         )
-        
+
         // 3. Right Eye circle (cx=125, cy=82, r=10)
         drawCircle(
             color = color,
@@ -683,12 +695,151 @@ fun SmileyFaceOutline(
                 140f * scale, 130f * scale
             )
         }
-        
+
         drawPath(
             path = path,
             color = color,
             style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
         )
+
+        // 5. Open-mouth grin (":D") — a straight top lip closing the smile arc so the mouth
+        //    reads as open while the mascot is "speaking".
+        if (mouthOpen) {
+            drawLine(
+                color = color,
+                start = Offset(60f * scale, 130f * scale),
+                end = Offset(140f * scale, 130f * scale),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+// Typewriter pacing (ms). Punctuation gets a longer pause to mimic speech cadence.
+private const val TYPE_CHAR_DELAY_MS = 34L
+private const val TYPE_SENTENCE_PAUSE_MS = 260L
+private const val TYPE_CLAUSE_PAUSE_MS = 150L
+
+/**
+ * Zen-score trend for the mascot: the most recent focus session's zen score minus the average of
+ * all prior sessions, in points. Returns null when fewer than two sessions have been recorded.
+ * [sessions] is expected newest-first (as returned by the DAO).
+ */
+fun computeMascotZenDelta(sessions: List<VowSession>): Int? {
+    if (sessions.size < 2) return null
+    val latest = sessions.first().zenScore
+    val priorAvg = sessions.drop(1).map { it.zenScore }.average()
+    return (latest - priorAvg).roundToInt()
+}
+
+/**
+ * Converts a marked mascot message (see [MascotMessages]) into an [AnnotatedString], applying
+ * sage for [[s]] spans and red for [[r]] spans and stripping the markers.
+ */
+fun parseMascotMessage(raw: String): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < raw.length) {
+        when {
+            raw.startsWith(MascotMessages.SAGE_OPEN, i) -> {
+                val end = raw.indexOf(MascotMessages.SAGE_CLOSE, i)
+                val contentStart = i + MascotMessages.SAGE_OPEN.length
+                if (end >= 0) {
+                    withStyle(SpanStyle(color = SageGreen)) { append(raw.substring(contentStart, end)) }
+                    i = end + MascotMessages.SAGE_CLOSE.length
+                } else {
+                    append(raw.substring(contentStart)); i = raw.length
+                }
+            }
+            raw.startsWith(MascotMessages.RED_OPEN, i) -> {
+                val end = raw.indexOf(MascotMessages.RED_CLOSE, i)
+                val contentStart = i + MascotMessages.RED_OPEN.length
+                if (end >= 0) {
+                    withStyle(SpanStyle(color = LockedRed)) { append(raw.substring(contentStart, end)) }
+                    i = end + MascotMessages.RED_CLOSE.length
+                } else {
+                    append(raw.substring(contentStart)); i = raw.length
+                }
+            }
+            else -> {
+                append(raw[i]); i++
+            }
+        }
+    }
+}
+
+/**
+ * Floating speech-bubble tooltip that points to the mascot logo. Types [rawMessage] out one
+ * character at a time (pausing at punctuation) and reports back via [onSpeakingChange] so the
+ * mascot can animate its mouth. Re-typing is keyed on [trigger].
+ */
+@Composable
+fun MascotSpeechBubble(
+    rawMessage: String,
+    trigger: Int,
+    onSpeakingChange: (Boolean) -> Unit,
+    onTypingComplete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val annotated = remember(rawMessage) { parseMascotMessage(rawMessage) }
+    var visibleChars by remember(trigger) { mutableStateOf(0) }
+
+    LaunchedEffect(trigger) {
+        visibleChars = 0
+        onSpeakingChange(true)
+        val text = annotated.text
+        for (idx in 1..text.length) {
+            visibleChars = idx
+            val delayMs = when (text[idx - 1]) {
+                '.', '!', '?', '—' -> TYPE_SENTENCE_PAUSE_MS
+                ',', ';', ':' -> TYPE_CLAUSE_PAUSE_MS
+                else -> TYPE_CHAR_DELAY_MS
+            }
+            delay(delayMs)
+        }
+        onSpeakingChange(false)
+        onTypingComplete()
+    }
+
+    Box(
+        modifier = modifier
+            .drawBehind {
+                // Tail: a triangle on the left edge pointing toward the mascot.
+                val tailSize = 7.dp.toPx()
+                val tailHalf = 6.dp.toPx()
+                val cy = 16.dp.toPx()
+                val border = 1.dp.toPx()
+                val fill = Path().apply {
+                    moveTo(0f, cy - tailHalf)
+                    lineTo(-tailSize, cy)
+                    lineTo(0f, cy + tailHalf)
+                    close()
+                }
+                drawPath(fill, MutedSurface)
+                drawLine(OutlineAccent, Offset(0f, cy - tailHalf), Offset(-tailSize, cy), border)
+                drawLine(OutlineAccent, Offset(-tailSize, cy), Offset(0f, cy + tailHalf), border)
+            }
+            .background(MutedSurface)
+            .sharpBorder(1.dp, OutlineAccent)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
+    ) {
+        Column {
+            Text(
+                text = "// aVow",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 3.dp)
+            )
+            Text(
+                text = annotated.subSequence(0, visibleChars.coerceIn(0, annotated.length)),
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 16.sp
+            )
+        }
     }
 }
 
@@ -725,7 +876,52 @@ fun VaultDashboard(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // 1. Top status bar layout (Stark header)
+        // 1. Top status bar layout (Stark header) with mascot + speech bubble
+        var bubbleVisible by remember { mutableStateOf(false) }
+        var bubbleMessage by remember { mutableStateOf("") }
+        var bubbleTrigger by remember { mutableStateOf(0) }
+        var speaking by remember { mutableStateOf(false) }
+        var mouthOpen by remember { mutableStateOf(false) }
+
+        // Zen-score trend from the recorded focus sessions (same SQLite source as Focus Insights).
+        val dashContext = LocalContext.current
+        val sessions by remember(dashContext) {
+            com.avow.app.data.history.VowDatabase.getDatabase(dashContext)
+                .vowSessionDao().getAllSessions()
+        }.collectAsState(initial = emptyList())
+        val zenDelta = remember(sessions) { computeMascotZenDelta(sessions) }
+
+        fun openBubble() {
+            bubbleMessage = MascotMessages.generateLine(
+                isLocked = bindingVowActivated,
+                days = days,
+                hours = hours,
+                minutes = minutes,
+                seconds = seconds,
+                zenDelta = zenDelta,
+                random = Random.Default
+            )
+            bubbleVisible = true
+            bubbleTrigger++
+        }
+
+        // Greet the user when the dashboard is first shown, and re-greet with the correct copy
+        // whenever the lock state resolves/changes (the vow state loads asynchronously, so the
+        // first composition can briefly report UNLOCKED before the datastore value arrives).
+        LaunchedEffect(bindingVowActivated) { openBubble() }
+
+        // Flap the mouth while the bubble is typing.
+        LaunchedEffect(speaking) {
+            if (speaking) {
+                while (true) {
+                    mouthOpen = !mouthOpen
+                    delay(150L)
+                }
+            } else {
+                mouthOpen = false
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -736,7 +932,38 @@ fun VaultDashboard(
             SmileyFaceOutline(
                 modifier = Modifier
                     .size(26.dp)
+                    .clickable {
+                        if (bubbleVisible) bubbleVisible = false else openBubble()
+                    },
+                mouthOpen = mouthOpen
             )
+            Spacer(modifier = Modifier.width(14.dp))
+            AnimatedVisibility(
+                visible = bubbleVisible,
+                enter = fadeIn() + scaleIn(
+                    animationSpec = spring(
+                        dampingRatio = 0.55f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    transformOrigin = TransformOrigin(0f, 0.25f)
+                ),
+                exit = fadeOut() + scaleOut(targetScale = 0.85f)
+            ) {
+                MascotSpeechBubble(
+                    rawMessage = bubbleMessage,
+                    trigger = bubbleTrigger,
+                    onSpeakingChange = { speaking = it },
+                    onTypingComplete = {}
+                )
+            }
+        }
+
+        // Auto-dismiss ~4s after the message finishes typing.
+        LaunchedEffect(bubbleTrigger, speaking) {
+            if (bubbleVisible && !speaking && bubbleMessage.isNotEmpty()) {
+                delay(4000L)
+                bubbleVisible = false
+            }
         }
         
         // Horizontal grid line divider
