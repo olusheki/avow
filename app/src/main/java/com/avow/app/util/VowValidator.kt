@@ -143,7 +143,8 @@ object VowValidator {
         doomscrollEndMin: Int = 0,
         doomscrollTargetAppSet: Set<String> = emptySet(),
         doomscrollCooldownMinutes: Int = 60,
-        doomscrollAllowanceMinutes: Int = 15
+        doomscrollAllowanceMinutes: Int = 15,
+        isOnboardingCompleted: Boolean = false
     ): String {
         val sortedDomains = banDomainSet.sorted().joinToString(",")
         val sortedApps = targetAppSet.sorted().joinToString(",")
@@ -153,7 +154,8 @@ object VowValidator {
                 "$secureFolderEnabled|$privateSpaceEnabled|$lockUninstall|$disallowDataWipe|$disableSafeBoot|$blockPlayStore|$dynamicReinstall|" +
                 "$deactivateUsbDebugging|$quietHoursEnabled|$quietStartHour|$quietStartMin|$quietEndHour|$quietEndMin|$sortedQuietHoursApps|" +
                 "$quietHoursSpecificDomain|$usageLimitsUpdated|$allowedValue|$allowedUnit|$selectedInterval|$specificDomain|$isCollectiveLimit|$vowBlocksJson|$temporaryLockoutEndTime|$vowStartTimeMs|$vowInitialDurationSeconds|" +
-                "$doomscrollShieldEnabled|$doomscrollAllTime|$doomscrollStartHour|$doomscrollStartMin|$doomscrollEndHour|$doomscrollEndMin|$sortedDoomscrollApps|$doomscrollCooldownMinutes|$doomscrollAllowanceMinutes"
+                "$doomscrollShieldEnabled|$doomscrollAllTime|$doomscrollStartHour|$doomscrollStartMin|$doomscrollEndHour|$doomscrollEndMin|$sortedDoomscrollApps|$doomscrollCooldownMinutes|$doomscrollAllowanceMinutes|" +
+                "$isOnboardingCompleted"
         
         val secretKey = getOrCreateSecretKey()
         val mac = Mac.getInstance("HmacSHA256")

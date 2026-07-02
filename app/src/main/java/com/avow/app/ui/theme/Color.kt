@@ -8,3 +8,4 @@ val OutlineAccent = Color(0xFF8A8A8A)      // Accent borders and logo stroke vec
 val MonospaceText = Color(0xFFF5F5F5)      // Highly visible text surfaces
 val SubtextGrey = Color(0xFFB5B5B5)        // Muted labels and unit tags
 val LockedRed = Color(0xFFE57373)          // Muted red for "LOCKED" status text
+val SageGood = Color(0xFF7FB069)           // Muted sage — success / permission-granted accent

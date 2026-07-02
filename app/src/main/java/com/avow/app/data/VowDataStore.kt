@@ -64,6 +64,7 @@ class VowDataStore(private val context: Context) {
         val DOOMSCROLL_TARGET_APP_SET = stringSetPreferencesKey("doomscroll_target_app_set")
         val DOOMSCROLL_COOLDOWN_MINUTES = intPreferencesKey("doomscroll_cooldown_minutes")
         val DOOMSCROLL_ALLOWANCE_MINUTES = intPreferencesKey("doomscroll_allowance_minutes")
+        val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
     }
  
     /**
@@ -113,6 +114,7 @@ class VowDataStore(private val context: Context) {
         val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
         val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
         val doomscrollAllowanceMinutes = prefs[DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
+        val isOnboardingCompleted = prefs[IS_ONBOARDING_COMPLETED] ?: false
 
         return VowValidator.computeHMACSignature(
             isVowActive = isActive,
@@ -155,7 +157,8 @@ class VowDataStore(private val context: Context) {
             doomscrollEndMin = doomscrollEndMin,
             doomscrollTargetAppSet = doomscrollTargetAppSet,
             doomscrollCooldownMinutes = doomscrollCooldownMinutes,
-            doomscrollAllowanceMinutes = doomscrollAllowanceMinutes
+            doomscrollAllowanceMinutes = doomscrollAllowanceMinutes,
+            isOnboardingCompleted = isOnboardingCompleted
         )
     }
 
@@ -207,6 +210,7 @@ class VowDataStore(private val context: Context) {
         val doomscrollTargetAppSet = prefs[DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
         val doomscrollCooldownMinutes = prefs[DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
         val doomscrollAllowanceMinutes = prefs[DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
+        val isOnboardingCompleted = prefs[IS_ONBOARDING_COMPLETED] ?: false
 
         if (storedSig == null) {
             val hasNonDefault = isActive ||
@@ -249,7 +253,8 @@ class VowDataStore(private val context: Context) {
                     doomscrollEndMin != 0 ||
                     doomscrollTargetAppSet.isNotEmpty() ||
                     doomscrollCooldownMinutes != 60 ||
-                    doomscrollAllowanceMinutes != 15
+                    doomscrollAllowanceMinutes != 15 ||
+                    isOnboardingCompleted
             return !hasNonDefault
         }
         
@@ -410,6 +415,13 @@ class VowDataStore(private val context: Context) {
             preferences[IS_VOW_ACTIVE] = isActive
             preferences[IS_ACTIVE_VOW_MODE] = isActive
             
+            preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[IS_ONBOARDING_COMPLETED] = completed
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
     }
