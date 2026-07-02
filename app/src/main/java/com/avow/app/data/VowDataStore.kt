@@ -490,6 +490,11 @@ class VowDataStore(private val context: Context) {
                 )
             }
 
+            // Clear only transient vow-session state. User configuration (doomscroll shield
+            // settings, scheduled blocks) must survive vow completion — previously it was wiped
+            // here, silently disabling the shield and deleting the user's blocks after every vow.
+            // An in-flight doomscroll cooldown (TEMPORARY_LOCKOUT_END_TIME) is also preserved:
+            // it is a doomscroll consequence, independent of the vow that just ended.
             preferences[IS_VOW_ACTIVE] = false
             preferences[IS_ACTIVE_VOW_MODE] = false
             preferences[REMAINING_VOW_SECONDS] = 0L
@@ -499,24 +504,13 @@ class VowDataStore(private val context: Context) {
             preferences[DEACTIVATION_REQUEST_TIME] = 0L
             preferences[IS_COLLECTIVE_LIMIT] = false
             preferences[PACKAGE_USAGE_JSON] = ""
-            preferences[VOW_BLOCKS_JSON] = ""
-            preferences[TEMPORARY_LOCKOUT_END_TIME] = 0L
             preferences[DOOMSCROLL_LAST_CLOSED_TIME] = 0L
             preferences[DOOMSCROLL_ACCUMULATED_MS] = 0L
             preferences[VOW_START_TIME_MS] = 0L
             preferences[VOW_INITIAL_DURATION_SECONDS] = 0L
             preferences[VOW_PICKUPS_COUNT] = 0
             preferences[VOW_ALLOWED_SCREEN_TIME_MS] = 0L
-            preferences[DOOMSCROLL_SHIELD_ENABLED] = false
-            preferences[DOOMSCROLL_ALL_TIME] = false
-            preferences[DOOMSCROLL_START_HOUR] = 23
-            preferences[DOOMSCROLL_START_MIN] = 0
-            preferences[DOOMSCROLL_END_HOUR] = 5
-            preferences[DOOMSCROLL_END_MIN] = 0
-            preferences[DOOMSCROLL_TARGET_APP_SET] = emptySet()
-            preferences[DOOMSCROLL_COOLDOWN_MINUTES] = 60
-            preferences[DOOMSCROLL_ALLOWANCE_MINUTES] = 15
-            
+
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
 

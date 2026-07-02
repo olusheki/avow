@@ -132,7 +132,7 @@ fun MainScreen(
 
     LaunchedEffect(isTemporaryLockout) {
         if (isTemporaryLockout) {
-            viewModel.setScreenState(ScreenState.TEMPORARY_LOCKOUT)
+            viewModel.enterTemporaryLockout()
             onTemporaryLockoutHandled()
         }
     }
@@ -418,6 +418,7 @@ fun MainScreen(
                     },
                     installedApps = uiState.installedApps,
                     deactivationRequestTime = uiState.deactivationRequestTime,
+                    temporaryLockoutEndTime = uiState.temporaryLockoutEndTime,
                     onDeactivateClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         viewModel.requestDeactivation()
@@ -433,7 +434,7 @@ fun MainScreen(
                 )
             }
             ScreenState.TEMPORARY_LOCKOUT -> {
-                TemporaryLockoutOverlay()
+                TemporaryLockoutOverlay(endTimeElapsedRealtime = uiState.temporaryLockoutEndTime)
             }
             ScreenState.FOCUS_HISTORY -> {
                 FocusHistoryWorkspace(
@@ -627,23 +628,63 @@ fun StraightFaceOutline(
 }
 
 /**
- * Temporary Lockout Overlay (😐 Face on LightGraphiteBg background).
+ * Temporary Lockout Overlay (😐 Face on LightGraphiteBg background) with a live cooldown
+ * countdown, so the user knows why they're here and when it ends.
  */
 @Composable
 fun TemporaryLockoutOverlay(
+    endTimeElapsedRealtime: Long = 0L,
     modifier: Modifier = Modifier
 ) {
+    var remainingSec by remember(endTimeElapsedRealtime) {
+        mutableStateOf(((endTimeElapsedRealtime - SystemClock.elapsedRealtime()) / 1000L).coerceAtLeast(0L))
+    }
+    LaunchedEffect(endTimeElapsedRealtime) {
+        while (true) {
+            remainingSec = ((endTimeElapsedRealtime - SystemClock.elapsedRealtime()) / 1000L).coerceAtLeast(0L)
+            delay(1000L)
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(LightGraphiteBg),
         contentAlignment = Alignment.Center
     ) {
-        StraightFaceOutline(
-            modifier = Modifier
-                .fillMaxWidth(0.35f)
-                .aspectRatio(1f)
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            StraightFaceOutline(
+                modifier = Modifier
+                    .fillMaxWidth(0.35f)
+                    .aspectRatio(1f)
+            )
+            Spacer(modifier = Modifier.height(28.dp))
+            Text(
+                text = "[ DOOMSCROLL COOLDOWN ]",
+                color = LockedRed,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+            if (remainingSec > 0L) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60),
+                    color = MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 34.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "The scroll ran long. Take a breath — the lock lifts itself.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 40.dp)
+            )
+        }
     }
 }
 

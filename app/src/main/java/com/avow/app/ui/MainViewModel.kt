@@ -274,9 +274,11 @@ class MainViewModel @JvmOverloads constructor(
                 delay(1000L)
                 val state = _uiState.value
                 
-                // Temporary lockout exit check
-                if (state.currentState == ScreenState.TEMPORARY_LOCKOUT && state.temporaryLockoutEndTime > 0L) {
-                    if (SystemClock.elapsedRealtime() >= state.temporaryLockoutEndTime) {
+                // Temporary lockout exit check. endTime == 0 (nothing enforced / read failed)
+                // also exits — the service still intercepts target apps, and staying stuck on
+                // the lockout screen with no countdown is worse.
+                if (state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
+                    if (state.temporaryLockoutEndTime == 0L || SystemClock.elapsedRealtime() >= state.temporaryLockoutEndTime) {
                         updateState { copy(currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT, temporaryLockoutEndTime = 0L) }
                     }
                 }
@@ -401,7 +403,39 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     fun setScreenState(state: ScreenState) {
-        updateState { copy(previousState = currentState, currentState = state) }
+        // Re-triggering the same state (e.g. repeated intrusion intercepts) must not overwrite
+        // previousState with itself, or the exit gesture would lead right back to the overlay.
+        updateState {
+            copy(
+                previousState = if (currentState == state) previousState else currentState,
+                currentState = state
+            )
+        }
+    }
+
+    /**
+     * Enters the temporary (doomscroll) lockout screen. The lockout end time is re-read from the
+     * DataStore because the service persists it after this ViewModel's one-shot load, so the
+     * in-memory copy is usually stale (previously this left the screen stuck with endTime = 0).
+     */
+    fun enterTemporaryLockout() {
+        viewModelScope.launch {
+            val end = try {
+                vowDataStore.preferencesFlow.first()[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to read lockout end time", e)
+                0L
+            }
+            // Set end time and screen state together so the ticker's exit check never sees the
+            // lockout screen with a still-unloaded (zero) end time.
+            updateState {
+                copy(
+                    previousState = if (currentState == ScreenState.TEMPORARY_LOCKOUT) previousState else currentState,
+                    temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, end),
+                    currentState = ScreenState.TEMPORARY_LOCKOUT
+                )
+            }
+        }
     }
 
     /**
@@ -435,7 +469,7 @@ class MainViewModel @JvmOverloads constructor(
                 val remainingHours = remainingMs / (3600L * 1000L)
                 val remainingMins = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
                 val remainingSecs = (remainingMs % (60L * 1000L)) / 1000L
-                showToast("Cooling-off active. Try again in \${remainingHours}h \${remainingMins}m \${remainingSecs}s.")
+                showToast("Cooling-off active. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
             } else {
                 val err = DeviceAdmin.deactivateDeviceOwner(getApplication())
                 if (err != null) {

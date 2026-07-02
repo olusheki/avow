@@ -103,9 +103,28 @@ class BlockerService : AccessibilityService() {
 
     private val userPresentReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_USER_PRESENT && isVowActive) {
-                serviceScope.launch {
-                    vowDataStore.incrementPickupsCount()
+            when (intent?.action) {
+                Intent.ACTION_USER_PRESENT -> {
+                    if (isVowActive) {
+                        serviceScope.launch { vowDataStore.incrementPickupsCount() }
+                    }
+                    // Screen came back inside a doomscroll target: apply the leaky-bucket drain
+                    // for the time the screen was off (recorded below on ACTION_SCREEN_OFF).
+                    if (doomscrollShieldEnabled && isDoomscrollTargetApp(currentForegroundPackage)) {
+                        handleForegroundPackageChange("", currentForegroundPackage)
+                    }
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    // Screen off while inside a doomscroll target counts as leaving it.
+                    if (doomscrollShieldEnabled && isDoomscrollTargetApp(currentForegroundPackage)) {
+                        val now = System.currentTimeMillis()
+                        doomscrollLastClosedTime = now
+                        val snapshot = doomscrollTracker.accumulatedMs
+                        serviceScope.launch {
+                            vowDataStore.saveDoomscrollLastClosedTime(now)
+                            if (snapshot > 0L) vowDataStore.saveDoomscrollAccumulatedMs(snapshot)
+                        }
+                    }
                 }
             }
         }
@@ -114,6 +133,9 @@ class BlockerService : AccessibilityService() {
     @Volatile private var doomscrollLastClosedTime = 0L
     @Volatile private var doomscrollAccumulatedMs = 0L
     @Volatile private var temporaryLockoutEndTime = 0L
+    @Volatile private var doomscrollTrackerSeeded = false
+    @Volatile private var lastOverlayLaunchMs = 0L
+    private var doomscrollTicksSinceFlush = 0
 
     private val doomscrollTracker = com.avow.app.util.DoomscrollTracker()
     private var allowedTimeTrackingJob: Job? = null
@@ -121,7 +143,11 @@ class BlockerService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
-        registerReceiver(userPresentReceiver, android.content.IntentFilter(Intent.ACTION_USER_PRESENT))
+        val presenceFilter = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        registerReceiver(userPresentReceiver, presenceFilter)
         
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
@@ -155,7 +181,9 @@ class BlockerService : AccessibilityService() {
                     doomscrollLastClosedTime = savedLastClosed
                 }
                 doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
-                temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                // The service's in-memory value is authoritative while running: persisted saves are
+                // async and unordered, so a disk value must never shrink an already-enforced lockout.
+                temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L)
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -165,7 +193,17 @@ class BlockerService : AccessibilityService() {
                 doomscrollTargetApps = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
                 doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
                 doomscrollAllowanceMinutes = prefs[VowDataStore.DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
-                doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
+                // Seed the tracker from disk exactly once (service restart). Re-applying every
+                // emission raced with the async per-tick saves and snapped the live counter back
+                // to stale values — the root cause of the unreliable lockout.
+                if (!doomscrollTrackerSeeded) {
+                    doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
+                    doomscrollTrackerSeeded = true
+                }
+                if (!doomscrollShieldEnabled) {
+                    doomscrollTracker.accumulatedMs = 0L
+                    doomscrollTracker.warningSent = false
+                }
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
                 
@@ -301,7 +339,9 @@ class BlockerService : AccessibilityService() {
             if (SETTINGS_PACKAGES.contains(pkgName)) {
                 val isCoolingOff = deactivationRequestTime > 0L &&
                         (System.currentTimeMillis() - deactivationRequestTime) < 24L * 3600L * 1000L
-                if (isCoolingOff) {
+                // Settings stays blocked during an active-mode vow (prevents disabling the
+                // accessibility service mid-vow) and during the deactivation cooling-off window.
+                if (isCoolingOff || (isVowActive && isActiveVowMode)) {
                     performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                     return
                 }
@@ -556,6 +596,11 @@ class BlockerService : AccessibilityService() {
     }
 
     private suspend fun updateDoomscrollStatistics() {
+        // Don't accumulate scroll time while the screen is off (phone in pocket with the
+        // target app still foreground would otherwise walk straight into a lockout).
+        val pm = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+        if (pm != null && !pm.isInteractive) return
+
         val isRestrictionActive = doomscrollAllTime || isCurrentTimeInQuietHours(
             doomscrollStartHour,
             doomscrollStartMin,
@@ -563,25 +608,34 @@ class BlockerService : AccessibilityService() {
             doomscrollEndMin
         )
         val allowanceMs = doomscrollAllowanceMinutes * 60L * 1000L
-        
+
         val result = doomscrollTracker.tick(isRestrictionActive, allowanceMs)
-        
-        // Save the updated accumulatedMs every second so the UI ticker works properly
-        serviceScope.launch {
-            vowDataStore.saveDoomscrollAccumulatedMs(doomscrollTracker.accumulatedMs)
+
+        // Flush the running total at most every 10 ticks; warning/lockout flush immediately.
+        doomscrollTicksSinceFlush++
+        if (doomscrollTicksSinceFlush >= 10) {
+            doomscrollTicksSinceFlush = 0
+            val snapshot = doomscrollTracker.accumulatedMs
+            serviceScope.launch { vowDataStore.saveDoomscrollAccumulatedMs(snapshot) }
         }
-        
+
         when (result) {
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerLockout -> {
+                val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
+                val endTime = SystemClock.elapsedRealtime() + cooldownMs
+                // Enforce in-memory first: the app-launch intercept reads this field, and the
+                // DataStore write may land seconds later.
+                temporaryLockoutEndTime = endTime
                 serviceScope.launch {
-                    val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
-                    vowDataStore.saveTemporaryLockoutEndTime(SystemClock.elapsedRealtime() + cooldownMs)
+                    vowDataStore.saveTemporaryLockoutEndTime(endTime)
+                    vowDataStore.saveDoomscrollAccumulatedMs(0L)
                 }
                 withContext(Dispatchers.Main) {
                     triggerLockoutOverlay()
                 }
             }
             com.avow.app.util.DoomscrollTracker.TrackingResult.TriggerWarning -> {
+                serviceScope.launch { vowDataStore.saveDoomscrollAccumulatedMs(doomscrollTracker.accumulatedMs) }
                 withContext(Dispatchers.Main) {
                     showWarningNotification()
                 }
@@ -626,7 +680,16 @@ class BlockerService : AccessibilityService() {
         notificationManager.notify(2002, builder.build())
     }
 
+    /** Accessibility events arrive in bursts; avoid stacking startActivity calls. */
+    private fun shouldDebounceOverlayLaunch(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (lastOverlayLaunchMs != 0L && now - lastOverlayLaunchMs < 1500L) return true
+        lastOverlayLaunchMs = now
+        return false
+    }
+
     private fun triggerLockoutOverlay() {
+        if (shouldDebounceOverlayLaunch()) return
         val overlayIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("IS_TEMPORARY_LOCKOUT", true)
@@ -776,6 +839,7 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun triggerBlackoutOverlay() {
+        if (shouldDebounceOverlayLaunch()) return
         val overlayIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("TRIGGER_INTRUSION", true)
