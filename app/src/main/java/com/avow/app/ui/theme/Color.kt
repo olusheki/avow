@@ -7,5 +7,5 @@ val MutedSurface = Color(0xFF7A7A7A)       // Accent layout box surfaces (slight
 val OutlineAccent = Color(0xFF8A8A8A)      // Accent borders and logo stroke vector lines
 val MonospaceText = Color(0xFFF5F5F5)      // Highly visible text surfaces
 val SubtextGrey = Color(0xFFB5B5B5)        // Muted labels and unit tags
-val LockedRed = Color(0xFFE57373)          // Muted red for "LOCKED" status text
-val SageGood = Color(0xFF7FB069)           // Muted sage — success / permission-granted accent
+val LockedRed = Color(0xFFE57373)          // Muted red for "LOCKED" status text / danger
+val SageGreen = Color(0xFF8FB88C)          // Muted sage for success / encouragement (the coach)
