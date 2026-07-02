@@ -162,6 +162,9 @@ fun MainScreen(
             .background(LightGraphiteBg)
     ) {
         when (uiState.currentState) {
+            ScreenState.ONBOARDING -> {
+                OnboardingFlow(viewModel = viewModel)
+            }
             ScreenState.UNLOCKED_VAULT, ScreenState.LOCKED_VAULT -> {
                 VaultDashboard(
                     statusText = if (uiState.isVowActive) "LOCKED" else "UNLOCKED",
