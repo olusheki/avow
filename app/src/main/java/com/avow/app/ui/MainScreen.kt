@@ -931,7 +931,7 @@ fun VaultDashboard(
         ) {
             SmileyFaceOutline(
                 modifier = Modifier
-                    .size(26.dp)
+                    .size(39.dp)
                     .clickable {
                         if (bubbleVisible) bubbleVisible = false else openBubble()
                     },
