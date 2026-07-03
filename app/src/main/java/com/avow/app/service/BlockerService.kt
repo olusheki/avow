@@ -10,7 +10,7 @@ import com.avow.app.MainActivity
 import com.avow.app.data.VowDataStore
 import com.avow.app.model.VowBlock
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.withLock
+import kotlin.concurrent.withLock
 import java.util.Calendar
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -78,7 +78,10 @@ class BlockerService : AccessibilityService() {
     @Volatile private var isCollectiveLimit = false
     @Volatile private var packageUsageJsonStr = ""
     private val packageUsageCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    private val cacheMutex = kotlinx.coroutines.sync.Mutex()
+    // Plain lock (not a coroutine Mutex): critical sections are tiny in-memory ops, and this lets
+    // the accessibility thread guard the cache without runBlocking. Never suspend while holding it.
+    private val cacheLock = java.util.concurrent.locks.ReentrantLock()
+    @Volatile private var usageCacheSeeded = false
 
     @Volatile private var lastTrackedPackage = ""
     @Volatile private var lastFlushTime = 0L
@@ -197,10 +200,13 @@ class BlockerService : AccessibilityService() {
                 previousIsVowActive = activeNow
                 manageAllowedTimeTracking()
 
+                // Import persisted usage only when seeding (service start / between vows). While a
+                // vow runs, the in-memory cache is authoritative — re-importing our own async
+                // writes could resurrect a stale higher value after an interval reset.
                 val usageJson = prefs[VowDataStore.PACKAGE_USAGE_JSON] ?: ""
-                if (usageJson != packageUsageJsonStr) {
+                if (usageJson != packageUsageJsonStr && (!usageCacheSeeded || !activeNow)) {
                     packageUsageJsonStr = usageJson
-                    cacheMutex.withLock {
+                    cacheLock.withLock {
                         val parsedMap = com.avow.app.data.PackageUsageSerializer.deserialize(usageJson)
                         if (parsedMap.isEmpty()) {
                             packageUsageCache.clear()
@@ -219,6 +225,7 @@ class BlockerService : AccessibilityService() {
                         }
                     }
                 }
+                usageCacheSeeded = activeNow
             }
         }
     }
@@ -228,13 +235,26 @@ class BlockerService : AccessibilityService() {
             if (allowedTimeTrackingJob == null || !allowedTimeTrackingJob!!.isActive) {
                 allowedTimeTrackingJob = serviceScope.launch {
                     val pm = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
-                    while (isVowActive) {
-                        delay(1000L)
-                        val fg = currentForegroundPackage
-                        if (fg.isNotEmpty() && isPermittedAppInForeground(fg)) {
-                            if (pm == null || pm.isInteractive) {
-                                vowDataStore.addAllowedScreenTimeMs(1000L)
+                    // Accumulate in memory and flush every ~30s instead of a DataStore transaction
+                    // per second (a vow can run for days). Flush on exit too so nothing is lost.
+                    var pendingMs = 0L
+                    try {
+                        while (isVowActive) {
+                            delay(1000L)
+                            val fg = currentForegroundPackage
+                            if (fg.isNotEmpty() && isPermittedAppInForeground(fg)) {
+                                if (pm == null || pm.isInteractive) {
+                                    pendingMs += 1000L
+                                }
                             }
+                            if (pendingMs >= 30000L) {
+                                vowDataStore.addAllowedScreenTimeMs(pendingMs)
+                                pendingMs = 0L
+                            }
+                        }
+                    } finally {
+                        if (pendingMs > 0L) {
+                            withContext(NonCancellable) { vowDataStore.addAllowedScreenTimeMs(pendingMs) }
                         }
                     }
                 }
@@ -287,13 +307,11 @@ class BlockerService : AccessibilityService() {
             // Eagerly check and reset cache if a new usage interval begins
             val nowMs = System.currentTimeMillis()
             var intervalReset = false
-            runBlocking {
-                cacheMutex.withLock {
-                    if (com.avow.app.util.VowValidator.isNewUsageInterval(nowMs, lastIntervalStartMs, selectedInterval)) {
-                        packageUsageCache.clear()
-                        lastIntervalStartMs = nowMs
-                        intervalReset = true
-                    }
+            cacheLock.withLock {
+                if (com.avow.app.util.VowValidator.isNewUsageInterval(nowMs, lastIntervalStartMs, selectedInterval)) {
+                    packageUsageCache.clear()
+                    lastIntervalStartMs = nowMs
+                    intervalReset = true
                 }
             }
             if (intervalReset) {
@@ -456,14 +474,19 @@ class BlockerService : AccessibilityService() {
 
     private suspend fun updateUsageStatistics() {
         val now = System.currentTimeMillis()
-        cacheMutex.withLock {
+        // Do only in-memory work under the lock; capture what needs persisting and act after
+        // releasing so a disk write never stalls the accessibility thread or another tick.
+        var flushSerialized: String? = null
+        var flushIntervalStart = 0L
+        var limitBreached = false
+        cacheLock.withLock {
             val isNewInterval = com.avow.app.util.VowValidator.isNewUsageInterval(now, lastIntervalStartMs, selectedInterval)
             if (isNewInterval) {
                 packageUsageCache.clear()
                 lastIntervalStartMs = now
-                val serialized = com.avow.app.data.PackageUsageSerializer.serialize(packageUsageCache)
-                packageUsageJsonStr = serialized
-                vowDataStore.savePackageUsage(serialized, now)
+                flushSerialized = com.avow.app.data.PackageUsageSerializer.serialize(packageUsageCache)
+                packageUsageJsonStr = flushSerialized!!
+                flushIntervalStart = now
                 lastFlushTime = now
                 ticksSinceLastFlush = 0
             } else {
@@ -481,7 +504,6 @@ class BlockerService : AccessibilityService() {
                     (limitVal * 60.0 * 1000.0).toLong()
                 }
 
-                var limitBreached = false
                 if (isCollectiveLimit) {
                     if (packageUsageCache.values.sum() >= limitMs) {
                         limitBreached = true
@@ -501,20 +523,19 @@ class BlockerService : AccessibilityService() {
                 val timeToFlush = ticksSinceLastFlush >= 30 || (now - lastFlushTime) >= 30000L
 
                 if (limitBreached || appSwitched || timeToFlush) {
-                    val serialized = com.avow.app.data.PackageUsageSerializer.serialize(packageUsageCache)
-                    packageUsageJsonStr = serialized
-                    vowDataStore.savePackageUsage(serialized, lastIntervalStartMs)
+                    flushSerialized = com.avow.app.data.PackageUsageSerializer.serialize(packageUsageCache)
+                    packageUsageJsonStr = flushSerialized!!
+                    flushIntervalStart = lastIntervalStartMs
                     lastFlushTime = now
                     ticksSinceLastFlush = 0
                     lastTrackedPackage = activePkg
                 }
-
-                if (limitBreached) {
-                    withContext(Dispatchers.Main) {
-                        triggerBlackoutOverlay()
-                    }
-                }
             }
+        }
+
+        flushSerialized?.let { vowDataStore.savePackageUsage(it, flushIntervalStart) }
+        if (limitBreached) {
+            withContext(Dispatchers.Main) { triggerBlackoutOverlay() }
         }
     }
 
