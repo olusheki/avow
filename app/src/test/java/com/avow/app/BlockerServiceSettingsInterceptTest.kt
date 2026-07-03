@@ -222,10 +222,11 @@ class BlockerServiceSettingsInterceptTest {
         isVowActiveField.isAccessible = true
         isVowActiveField.set(service, true)
 
-        // Mock AccessibilityNodeInfo
+        // Mock AccessibilityNodeInfo. Detection now keys on the toolbar badge's content description
+        // (not arbitrary page text), so the incognito signal is set there.
         val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
-        every { rootNode.text } returns "Incognito"
-        every { rootNode.contentDescription } returns null
+        every { rootNode.text } returns null
+        every { rootNode.contentDescription } returns "Incognito"
         every { rootNode.childCount } returns 0
         every { service.rootInActiveWindow } returns rootNode
 

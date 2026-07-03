@@ -806,22 +806,34 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isIncognitoModeActive(node: AccessibilityNodeInfo, packageName: String): Boolean {
-        val text = node.text?.toString() ?: ""
+        return hasIncognitoIndicator(node, packageName, maxDepth = 8, currentDepth = 0)
+    }
+
+    /**
+     * Detects incognito/secret mode by the toolbar badge's accessibility *content description* only
+     * — never arbitrary page text. Matching visible text meant googling "incognito" or opening an
+     * article about it blacked out the screen. The badge is UI chrome and lives shallow, so we also
+     * cap the recursion depth.
+     */
+    private fun hasIncognitoIndicator(
+        node: AccessibilityNodeInfo,
+        packageName: String,
+        maxDepth: Int,
+        currentDepth: Int
+    ): Boolean {
+        if (currentDepth > maxDepth) return false
         val desc = node.contentDescription?.toString() ?: ""
         if (packageName == "com.android.chrome") {
-            if (text.contains("Incognito", ignoreCase = true) || desc.contains("Incognito", ignoreCase = true)) {
-                return true
-            }
+            if (desc.contains("Incognito", ignoreCase = true)) return true
         } else if (packageName == "com.sec.android.app.sbrowser") {
-            if (text.contains("Secret mode", ignoreCase = true) || desc.contains("Secret mode", ignoreCase = true) ||
-                text.contains("SecretMode", ignoreCase = true) || desc.contains("SecretMode", ignoreCase = true)) {
+            if (desc.contains("Secret mode", ignoreCase = true) || desc.contains("SecretMode", ignoreCase = true)) {
                 return true
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             try {
-                if (isIncognitoModeActive(child, packageName)) {
+                if (hasIncognitoIndicator(child, packageName, maxDepth, currentDepth + 1)) {
                     return true
                 }
             } finally {
