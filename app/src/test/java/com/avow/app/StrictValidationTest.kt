@@ -7,6 +7,27 @@ import org.junit.Test
 class StrictValidationTest {
 
     @Test
+    fun testDoomscrollWindowStricter_wideningAllowed_narrowingRejected() {
+        // Baseline window 23:00–05:00 (crosses midnight).
+        // Widening to 22:00–06:00 fully covers it → stricter.
+        assertTrue(
+            VowValidator.isDoomscrollWindowStricter(23, 0, 5, 0, 22, 0, 6, 0)
+        )
+        // Identical window is "as strict or stricter".
+        assertTrue(
+            VowValidator.isDoomscrollWindowStricter(23, 0, 5, 0, 23, 0, 5, 0)
+        )
+        // Narrowing to 23:30–04:30 drops covered minutes → not stricter.
+        assertFalse(
+            VowValidator.isDoomscrollWindowStricter(23, 0, 5, 0, 23, 30, 4, 30)
+        )
+        // A disjoint same-day window doesn't cover the old one.
+        assertFalse(
+            VowValidator.isDoomscrollWindowStricter(23, 0, 5, 0, 9, 0, 17, 0)
+        )
+    }
+
+    @Test
     fun testQuietHoursNormalDuration() {
         // GIVEN: 22:00 to 07:00 (crosses midnight)
         val durationMid = VowValidator.getQuietHoursDurationMinutes(22, 0, 7, 0)

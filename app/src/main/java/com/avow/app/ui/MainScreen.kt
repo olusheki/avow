@@ -237,8 +237,11 @@ fun MainScreen(
                     secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
-                        viewModel.saveConfigToDataStore()
+                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        else {
+                            viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
+                            viewModel.saveConfigToDataStore()
+                        }
                     },
                     privateSpaceEnabled = uiState.privateSpaceEnabled,
                     onPrivateSpaceToggle = {
@@ -327,19 +330,28 @@ fun MainScreen(
                     doomscrollShieldEnabled = uiState.doomscrollShieldEnabled,
                     onDoomscrollShieldToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        viewModel.updateState { copy(doomscrollShieldEnabled = !doomscrollShieldEnabled) }
-                        viewModel.saveConfigToDataStore()
-                        if (!uiState.doomscrollShieldEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        // Enabling the shield is stricter (allowed while locked); disabling it is not.
+                        if (uiState.isVowActive && uiState.doomscrollShieldEnabled) {
+                            viewModel.showToast("Error: The Doomscroll Shield can't be turned off while locked.")
+                        } else {
+                            val enabling = !uiState.doomscrollShieldEnabled
+                            viewModel.updateState { copy(doomscrollShieldEnabled = enabling) }
+                            viewModel.saveConfigToDataStore()
+                            if (enabling && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            }
                         }
                     },
                     doomscrollAllTime = uiState.doomscrollAllTime,
                     onDoomscrollAllTimeToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) {
-                            viewModel.showToast("Error: Doomscroll Shield settings cannot be modified while locked.")
+                        val enabling = !uiState.doomscrollAllTime
+                        // All-day is the strictest window: turning it on is allowed while locked,
+                        // turning it off (back to a time range) is a loosening and is not.
+                        if (uiState.isVowActive && !enabling) {
+                            viewModel.showToast("Error: All-day restriction can't be turned off while locked.")
                         } else {
-                            viewModel.updateState { copy(doomscrollAllTime = !doomscrollAllTime) }
+                            viewModel.updateState { copy(doomscrollAllTime = enabling) }
                             viewModel.saveConfigToDataStore()
                         }
                     },
@@ -349,7 +361,25 @@ fun MainScreen(
                     doomscrollEndMin = uiState.doomscrollEndMin,
                     onDoomscrollTimeUpdate = { sh, sm, eh, em ->
                         if (uiState.isVowActive) {
-                            viewModel.showToast("Error: Doomscroll Shield settings cannot be modified while locked.")
+                            // Allow only a window that still covers the locked-in one (widen, not narrow).
+                            val stricter = com.avow.app.util.VowValidator.isDoomscrollWindowStricter(
+                                uiState.frozenDoomscrollStartHour, uiState.frozenDoomscrollStartMin,
+                                uiState.frozenDoomscrollEndHour, uiState.frozenDoomscrollEndMin,
+                                sh, sm, eh, em
+                            )
+                            if (!stricter) {
+                                viewModel.showToast("Error: The restriction window can only be widened while locked.")
+                            } else {
+                                viewModel.updateState {
+                                    copy(
+                                        doomscrollStartHour = sh, doomscrollStartMin = sm,
+                                        doomscrollEndHour = eh, doomscrollEndMin = em,
+                                        frozenDoomscrollStartHour = sh, frozenDoomscrollStartMin = sm,
+                                        frozenDoomscrollEndHour = eh, frozenDoomscrollEndMin = em
+                                    )
+                                }
+                                viewModel.saveConfigToDataStore()
+                            }
                         } else {
                             viewModel.updateState {
                                 copy(

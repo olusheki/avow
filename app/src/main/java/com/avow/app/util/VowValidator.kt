@@ -98,6 +98,33 @@ object VowValidator {
         return minutes
     }
 
+    private fun windowMinutes(startHour: Int, startMin: Int, endHour: Int, endMin: Int): Set<Int> {
+        val start = startHour * 60 + startMin
+        val end = endHour * 60 + endMin
+        val minutes = mutableSetOf<Int>()
+        if (start <= end) {
+            for (m in start..end) minutes.add(m)
+        } else {
+            for (m in start..1439) minutes.add(m)
+            for (m in 0..end) minutes.add(m)
+        }
+        return minutes
+    }
+
+    /**
+     * True if the new doomscroll window blocks at least every minute the old one did (i.e. it is as
+     * strict or stricter — a widened or unchanged window). Used to allow tightening the shield while
+     * a vow is locked while rejecting any narrowing. Handles midnight crossings.
+     */
+    fun isDoomscrollWindowStricter(
+        oldStartHour: Int, oldStartMin: Int, oldEndHour: Int, oldEndMin: Int,
+        newStartHour: Int, newStartMin: Int, newEndHour: Int, newEndMin: Int
+    ): Boolean {
+        val oldMinutes = windowMinutes(oldStartHour, oldStartMin, oldEndHour, oldEndMin)
+        val newMinutes = windowMinutes(newStartHour, newStartMin, newEndHour, newEndMin)
+        return oldMinutes.all { it in newMinutes }
+    }
+
     /**
      * Computes the HMAC-SHA256 signature using the AndroidKeyStore dynamic symmetric key.
      */
