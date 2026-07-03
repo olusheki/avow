@@ -146,7 +146,6 @@ class BlockerService : AccessibilityService() {
 
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
-            var previousIsVowActive = false
             vowDataStore.preferencesFlow.collect { prefs ->
                 val activeNow = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                 
@@ -200,8 +199,7 @@ class BlockerService : AccessibilityService() {
                 }
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
-                
-                previousIsVowActive = activeNow
+
                 manageAllowedTimeTracking()
 
                 // Import persisted usage only when seeding (service start / between vows). While a

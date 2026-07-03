@@ -187,8 +187,7 @@ fun MainScreen(
                     minutes = uiState.minutes,
                     seconds = uiState.seconds,
                     panelThreeTitle = if (uiState.isVowActive) "ADD BINDING TIME" else "INFLICT BINDING VOW",
-                    panelThreeSubtitle = "RESTRICTION_2",
-                    onQuietHoursClick = { 
+                    onQuietHoursClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         showQuietHoursDialog = true 
                     },
@@ -902,7 +901,6 @@ fun VaultDashboard(
     minutes: Int,
     seconds: Int,
     panelThreeTitle: String,
-    panelThreeSubtitle: String,
     onQuietHoursClick: () -> Unit,
     onSetUsageLimitsClick: () -> Unit,
     onPanelThreeClick: () -> Unit,
@@ -1168,19 +1166,16 @@ fun VaultDashboard(
         ) {
             DashboardPanelButton(
                 title = "SCHEDULED BLOCKS",
-                subtitle = "",
                 isActivated = quietHoursActivated,
                 onClick = onQuietHoursClick
             )
             DashboardPanelButton(
                 title = "USAGE LIMITS",
-                subtitle = "",
                 isActivated = usageLimitsActivated,
                 onClick = onSetUsageLimitsClick
             )
             DashboardPanelButton(
                 title = panelThreeTitle,
-                subtitle = "",
                 isActivated = bindingVowActivated,
                 onClick = onPanelThreeClick
             )
@@ -1289,7 +1284,6 @@ fun Modifier.sharpBorder(
 @Composable
 fun DashboardPanelButton(
     title: String,
-    subtitle: String,
     isActivated: Boolean,
     onClick: () -> Unit
 ) {
@@ -1322,16 +1316,6 @@ fun DashboardPanelButton(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            if (subtitle.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    color = SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal
-                )
-            }
         }
     }
 }

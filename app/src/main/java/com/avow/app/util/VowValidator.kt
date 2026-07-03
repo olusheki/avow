@@ -14,7 +14,6 @@ import com.avow.app.model.VowBlock
 
 object VowValidator {
 
-    private const val SALT = "aVow_Enterprise_Security_Anchor_Salt_2026"
     const val MAX_VOW_SECONDS = 30L * 24L * 3600L // 30 days maximum
     
     private const val KEY_ALIAS = "vow_hmac_key"
