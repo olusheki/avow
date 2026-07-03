@@ -153,7 +153,11 @@ and can start immediately if you want to unblock it early (per the existing
 
 ---
 
-## W3 · `fix/enforcement-correctness`  *(depends on W1)*
+## W3 · `fix/enforcement-correctness`  *(depends on W1)* · ✅ DONE (2026-07-03)
+> Branch `fix/enforcement-correctness`, 6 commits, suite 87 green. T1–T7 landed. Scope note on T4:
+> the device-owner restriction toggles' "enable-while-locked (+ live re-assert)" is deferred to W4,
+> where those rows are restructured behind the capability interface; W3-T4 fixed the live-enforced
+> doomscroll paths and closed the Secure-Folder disable-while-locked hole.
 
 ### W3-T1 · Host-based domain matching  `[U]` `[R:M3]` · M
 - **Problem:** `DomainUtil.matches` and the `banDomainSet` check use `url.contains(domain)`.
