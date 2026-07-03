@@ -648,7 +648,7 @@ class BlockerService : AccessibilityService() {
                 "Doomscroll Warning",
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifies when continuous scrolling limit is reached"
+                description = "Notifies when the time limit in a target app is nearly reached"
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -667,7 +667,7 @@ class BlockerService : AccessibilityService() {
         val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Doomscroll Warning")
-            .setContentText("You have been scrolling for too long. Tap to bind a 15-minute vow.")
+            .setContentText("You've spent a while in here. Tap to bind a 15-minute vow.")
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
