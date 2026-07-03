@@ -21,6 +21,20 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("lite") {
+            dimension = "distribution"
+            // Play build: "aVow", applicationId com.avow.app, no device-admin surface.
+        }
+        create("full") {
+            dimension = "distribution"
+            // GitHub power build: "aVow Plus", distinct id so both can be installed side by side.
+            applicationIdSuffix = ".plus"
+            versionNameSuffix = "-plus"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

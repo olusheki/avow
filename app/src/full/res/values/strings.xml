@@ -1,0 +1,4 @@
+<resources>
+    <!-- Full flavor overrides the app name; lite keeps "aVow" from src/main. -->
+    <string name="app_name">aVow Plus</string>
+</resources>

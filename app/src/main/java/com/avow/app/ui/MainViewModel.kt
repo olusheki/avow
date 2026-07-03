@@ -1,9 +1,6 @@
 package com.avow.app.ui
 
 import android.app.Application
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
@@ -11,8 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.datastore.preferences.core.Preferences
 import com.avow.app.data.VowDataStore
+import com.avow.app.enforcement.CapabilitiesFactory
+import com.avow.app.enforcement.EnforcementCapabilities
 import com.avow.app.model.VowBlock
-import com.avow.app.receiver.DeviceAdmin
 import com.avow.app.util.VowValidator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +23,8 @@ import java.util.UUID
 
 class MainViewModel @JvmOverloads constructor(
     application: Application,
-    private val vowDataStore: com.avow.app.data.VowDataStore = com.avow.app.data.VowDataStore(application)
+    private val vowDataStore: com.avow.app.data.VowDataStore = com.avow.app.data.VowDataStore(application),
+    private val capabilities: EnforcementCapabilities = CapabilitiesFactory.create(application)
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -177,8 +176,7 @@ class MainViewModel @JvmOverloads constructor(
                 val isCollectiveLimit = prefs[VowDataStore.IS_COLLECTIVE_LIMIT] ?: false
                 val isOnboardingCompleted = prefs[VowDataStore.IS_ONBOARDING_COMPLETED] ?: false
 
-                val dpm = getApplication<Application>().getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val isDeviceOwner = dpm.isDeviceOwnerApp(getApplication<Application>().packageName)
+                val isDeviceOwner = capabilities.isDeviceOwnerActive
 
                 var days = 0
                 var hours = 0
@@ -215,8 +213,7 @@ class MainViewModel @JvmOverloads constructor(
                         seconds = (finalRemaining % 60).toInt()
                     } else {
                         finalIsVowActive = false
-                        DeviceAdmin.assertBindingVow(
-                            context = getApplication(),
+                        capabilities.assertBindingVow(
                             activate = false,
                             secureFolderEnabled = secureFolderEnabled,
                             privateSpaceEnabled = privateSpaceEnabled,
@@ -345,8 +342,7 @@ class MainViewModel @JvmOverloads constructor(
                         totalRemaining -= elapsedSeconds
                         
                         if (totalRemaining <= 0L) {
-                            DeviceAdmin.assertBindingVow(
-                                context = getApplication(),
+                            capabilities.assertBindingVow(
                                 activate = false,
                                 secureFolderEnabled = state.secureFolderEnabled,
                                 privateSpaceEnabled = state.privateSpaceEnabled,
@@ -522,7 +518,7 @@ class MainViewModel @JvmOverloads constructor(
                 val remainingSecs = (remainingMs % (60L * 1000L)) / 1000L
                 showToast("Cooling-off active. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
             } else {
-                val err = DeviceAdmin.deactivateDeviceOwner(getApplication())
+                val err = capabilities.deactivateDeviceOwner()
                 if (err != null) {
                     showToast(err)
                 } else {
@@ -556,8 +552,7 @@ class MainViewModel @JvmOverloads constructor(
             showToast("Added time to the active Vow.")
             return null
         } else {
-            val err = DeviceAdmin.assertBindingVow(
-                context = getApplication(),
+            val err = capabilities.assertBindingVow(
                 activate = true,
                 secureFolderEnabled = state.secureFolderEnabled,
                 privateSpaceEnabled = state.privateSpaceEnabled,

@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.avow.app.data.VowDataStore
+import com.avow.app.enforcement.EnforcementCapabilities
 import com.avow.app.ui.MainViewModel
 import com.avow.app.ui.ScreenState
 import io.mockk.every
@@ -34,6 +35,17 @@ class MainViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
+    // Flavor-agnostic capabilities so the test doesn't depend on which flavor's factory is compiled.
+    private val fakeCapabilities = object : EnforcementCapabilities {
+        override val isDeviceOwnerActive = true
+        override fun assertBindingVow(
+            activate: Boolean, secureFolderEnabled: Boolean, privateSpaceEnabled: Boolean,
+            lockUninstall: Boolean, disallowDataWipe: Boolean, disableSafeBoot: Boolean,
+            blockPlayStore: Boolean, deactivateUsbDebugging: Boolean
+        ): String? = null
+        override fun deactivateDeviceOwner(): String? = null
+    }
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
@@ -62,7 +74,7 @@ class MainViewModelTest {
         val mockDataStore = mockk<VowDataStore>(relaxed = true)
         every { mockDataStore.preferencesFlow } returns flowOf(emptyPreferences())
 
-        val viewModel = MainViewModel(app, mockDataStore)
+        val viewModel = MainViewModel(app, mockDataStore, fakeCapabilities)
         try {
             // Wait until initialization loads state from preferences flow
             viewModel.uiState.first { it.isLoaded }
@@ -86,7 +98,7 @@ class MainViewModelTest {
         val mockDataStore = mockk<VowDataStore>(relaxed = true)
         every { mockDataStore.preferencesFlow } returns flowOf(emptyPreferences())
         
-        val viewModel = MainViewModel(app, mockDataStore)
+        val viewModel = MainViewModel(app, mockDataStore, fakeCapabilities)
         try {
             // Wait until initialization loads state from preferences flow
             val state = viewModel.uiState.first { it.isLoaded }
