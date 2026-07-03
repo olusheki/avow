@@ -93,7 +93,7 @@ class VowDataStore(private val context: Context) {
         val quietStartMin = prefs[QUIET_START_MIN] ?: 0
         val quietEndHour = prefs[QUIET_END_HOUR] ?: 7
         val quietEndMin = prefs[QUIET_END_MIN] ?: 0
-        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
+        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
         val quietHoursSpecificDomain = prefs[QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
         val usageLimitsUpdated = prefs[USAGE_LIMITS_UPDATED] ?: false
         val allowedValue = prefs[ALLOWED_VALUE] ?: "5"
@@ -189,7 +189,7 @@ class VowDataStore(private val context: Context) {
         val quietStartMin = prefs[QUIET_START_MIN] ?: 0
         val quietEndHour = prefs[QUIET_END_HOUR] ?: 7
         val quietEndMin = prefs[QUIET_END_MIN] ?: 0
-        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
+        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
         val quietHoursSpecificDomain = prefs[QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
         val usageLimitsUpdated = prefs[USAGE_LIMITS_UPDATED] ?: false
         val allowedValue = prefs[ALLOWED_VALUE] ?: "5"
@@ -233,7 +233,7 @@ class VowDataStore(private val context: Context) {
                     quietStartMin != 0 ||
                     quietEndHour != 7 ||
                     quietEndMin != 0 ||
-                    quietHoursTargetAppSet != setOf("All Social Media") ||
+                    quietHoursTargetAppSet.isNotEmpty() ||
                     quietHoursSpecificDomain != "" ||
                     usageLimitsUpdated ||
                     allowedValue != "5" ||

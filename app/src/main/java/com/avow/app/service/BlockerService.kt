@@ -25,17 +25,6 @@ class BlockerService : AccessibilityService() {
     companion object {
         private const val TAG = "BlockerService"
         
-        private val SOCIAL_MEDIA_PACKAGES = setOf(
-            "com.instagram.android",
-            "com.tiktok.android",
-            "com.zhiliaoapp.musically",
-            "com.ss.android.ugc.trill",
-            "com.twitter.android",
-            "com.twitter.android.lite",
-            "com.facebook.katana",
-            "com.facebook.lite"
-        )
-
         private val SETTINGS_PACKAGES = setOf(
             "com.android.settings",
             "com.samsung.android.settings",
@@ -67,7 +56,6 @@ class BlockerService : AccessibilityService() {
     @Volatile private var quietStartMin = 0
     @Volatile private var quietEndHour = 7
     @Volatile private var quietEndMin = 0
-    @Volatile private var quietHoursTargetAppSet = setOf("All Social Media")
     @Volatile private var quietHoursSpecificDomain = ""
     @Volatile private var usageLimitsUpdated = false
     @Volatile private var allowedValue = "5"
@@ -166,7 +154,6 @@ class BlockerService : AccessibilityService() {
                 quietStartMin = prefs[VowDataStore.QUIET_START_MIN] ?: 0
                 quietEndHour = prefs[VowDataStore.QUIET_END_HOUR] ?: 7
                 quietEndMin = prefs[VowDataStore.QUIET_END_MIN] ?: 0
-                quietHoursTargetAppSet = prefs[VowDataStore.QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
                 quietHoursSpecificDomain = prefs[VowDataStore.QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
                 usageLimitsUpdated = prefs[VowDataStore.USAGE_LIMITS_UPDATED] ?: false
                 allowedValue = prefs[VowDataStore.ALLOWED_VALUE] ?: "5"
@@ -550,19 +537,8 @@ class BlockerService : AccessibilityService() {
         return isDoomscrollTargetApp(pkg)
     }
 
-    private fun isQuietHoursRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive) return false
-        if (quietHoursTargetAppSet.contains("All Social Media")) {
-            if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
-        }
-        return quietHoursTargetAppSet.contains(pkgName)
-    }
-
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
         if (!isVowActive) return false
-        if (block.targetApps.contains("All Social Media")) {
-            if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
-        }
         return block.targetApps.contains(pkgName)
     }
 
@@ -572,16 +548,10 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isTargetAppPackage(pkgName: String): Boolean {
-        if (targetAppSet.contains("All Social Media")) {
-            if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
-        }
         return targetAppSet.contains(pkgName)
     }
 
     private fun isDoomscrollTargetApp(pkgName: String): Boolean {
-        if (doomscrollTargetApps.contains("All Social Media")) {
-            if (SOCIAL_MEDIA_PACKAGES.contains(pkgName)) return true
-        }
         return doomscrollTargetApps.contains(pkgName)
     }
 
