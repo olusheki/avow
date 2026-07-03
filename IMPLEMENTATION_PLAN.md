@@ -266,7 +266,12 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
 > accessibility for non-tool apps. The lite build must not depend on accessibility for its **core**
 > blocking. See the review write-up for sources.
 
-### W4-T1 · Gradle product-flavor split  `[from deployment plan §7]` · M
+### W4-T1 · Gradle product-flavor split  `[from deployment plan §7]` · M · ✅ DONE (2026-07-03)
+> Branch `feat/flavor-split`. Both `lite`/`full` compile and pass 89/89 tests each. `EnforcementCapabilities`
+> interface in `src/main`; `Full…`/`Lite…` impls + `CapabilitiesFactory` per flavor; `MainViewModel`
+> now uses injected `capabilities` (no `DevicePolicyManager`/`DeviceAdmin` refs in `src/main`).
+> `DeviceAdmin.kt` + its receiver/metadata moved to `src/full`; verified the lite merged manifest
+> has zero device-admin surface. lite = "aVow" (`com.avow.app`), full = "aVow Plus" (`com.avow.app.plus`).
 - **Branding (decided 2026-07-03):** lite = **"aVow"**, `applicationId com.avow.app` (the Play
   listing, the "normal" app). full = **"aVow Plus"**, `applicationId com.avow.app.plus` +
   `versionNameSuffix "-plus"` (GitHub power build; distinct id so both can be installed side by side).
