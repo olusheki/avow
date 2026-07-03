@@ -93,7 +93,7 @@ class VowDataStore(private val context: Context) {
         val quietStartMin = prefs[QUIET_START_MIN] ?: 0
         val quietEndHour = prefs[QUIET_END_HOUR] ?: 7
         val quietEndMin = prefs[QUIET_END_MIN] ?: 0
-        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
+        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
         val quietHoursSpecificDomain = prefs[QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
         val usageLimitsUpdated = prefs[USAGE_LIMITS_UPDATED] ?: false
         val allowedValue = prefs[ALLOWED_VALUE] ?: "5"
@@ -189,7 +189,7 @@ class VowDataStore(private val context: Context) {
         val quietStartMin = prefs[QUIET_START_MIN] ?: 0
         val quietEndHour = prefs[QUIET_END_HOUR] ?: 7
         val quietEndMin = prefs[QUIET_END_MIN] ?: 0
-        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: setOf("All Social Media")
+        val quietHoursTargetAppSet = prefs[QUIET_HOURS_TARGET_APP_SET] ?: emptySet()
         val quietHoursSpecificDomain = prefs[QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
         val usageLimitsUpdated = prefs[USAGE_LIMITS_UPDATED] ?: false
         val allowedValue = prefs[ALLOWED_VALUE] ?: "5"
@@ -233,7 +233,7 @@ class VowDataStore(private val context: Context) {
                     quietStartMin != 0 ||
                     quietEndHour != 7 ||
                     quietEndMin != 0 ||
-                    quietHoursTargetAppSet != setOf("All Social Media") ||
+                    quietHoursTargetAppSet.isNotEmpty() ||
                     quietHoursSpecificDomain != "" ||
                     usageLimitsUpdated ||
                     allowedValue != "5" ||
@@ -299,7 +299,36 @@ class VowDataStore(private val context: Context) {
             }
         }
     }
- 
+
+    /**
+     * Persists the strict-lockout fallback when the stored signature is invalid. [preferencesFlow]
+     * already emits the corrected state in-memory for immediate safety, but never wrote it back — so
+     * it only "stuck" on the next unrelated save. Call once at startup. Idempotent: once a valid
+     * signature is written, subsequent calls are no-ops (so it can't loop or fight a valid state).
+     */
+    suspend fun repairTamperedStateIfNeeded() {
+        val isUnlocked = try {
+            context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Throwable) {
+            true
+        }
+        if (!isUnlocked) return
+        context.dataStore.edit { preferences ->
+            if (isSignatureValid(preferences)) return@edit
+            preferences[IS_VOW_ACTIVE] = true
+            preferences[IS_ACTIVE_VOW_MODE] = true
+            preferences[REMAINING_VOW_SECONDS] = maxOf(preferences[REMAINING_VOW_SECONDS] ?: 0L, 7L * 24L * 3600L)
+            preferences[SECURE_FOLDER_ENABLED] = true
+            preferences[PRIVATE_SPACE_ENABLED] = true
+            preferences[LOCK_UNINSTALL] = true
+            preferences[DISALLOW_DATA_WIPE] = true
+            preferences[DISABLE_SAFE_BOOT] = true
+            preferences[BLOCK_PLAY_STORE] = true
+            preferences[DEACTIVATE_USB_DEBUGGING] = true
+            preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
     suspend fun saveVowConfig(
         isVowActive: Boolean,
         isActiveVowMode: Boolean,

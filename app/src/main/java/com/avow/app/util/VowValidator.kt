@@ -123,7 +123,7 @@ object VowValidator {
         quietStartMin: Int = 0,
         quietEndHour: Int = 7,
         quietEndMin: Int = 0,
-        quietHoursTargetAppSet: Set<String> = setOf("All Social Media"),
+        quietHoursTargetAppSet: Set<String> = emptySet(),
         quietHoursSpecificDomain: String = "",
         usageLimitsUpdated: Boolean = false,
         allowedValue: String = "5",

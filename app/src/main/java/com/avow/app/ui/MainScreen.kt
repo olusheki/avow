@@ -218,7 +218,8 @@ fun MainScreen(
                     deactivationRequestTime = uiState.deactivationRequestTime,
                     tickTrigger = uiState.seconds, // use seconds as tick trigger for UI updates
                     isActiveVowMode = uiState.isActiveVowMode,
-                    onVowModeChange = { 
+                    modalOpen = showQuietHoursDialog || showUsageLimitsDialog || showBindingVowDialog,
+                    onVowModeChange = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         viewModel.updateState { copy(isActiveVowMode = it) }
                         viewModel.saveConfigToDataStore()
@@ -914,6 +915,7 @@ fun VaultDashboard(
     deactivationRequestTime: Long = 0L,
     tickTrigger: Int = 0,
     isActiveVowMode: Boolean = false,
+    modalOpen: Boolean = false,
     onVowModeChange: (Boolean) -> Unit = {}
 ) {
     Column(
@@ -1067,10 +1069,14 @@ fun VaultDashboard(
         Spacer(modifier = Modifier.height(20.dp))
 
         // Vow Mode Segmented Control
-        SingleChoiceSegmentedButtonRow(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
+        ) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
                 .height(40.dp)
         ) {
             SegmentedButton(
@@ -1137,6 +1143,16 @@ fun VaultDashboard(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
+                )
+            }
+        }
+            // A config dialog scrim dims the window uniformly, but this control's bright fill still
+            // reads as "not grayed" against the darkened panels. Recede it while a dialog is open.
+            if (modalOpen) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(LightGraphiteBg.copy(alpha = 0.7f))
                 )
             }
         }
@@ -1811,15 +1827,6 @@ fun ConfigurationWorkspace(
                                 .background(MutedSurface)
                                 .border(1.dp, OutlineAccent)
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("All Social Media", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                                onClick = {
-                                    if (!doomscrollTargetApps.contains("All Social Media")) {
-                                        onDoomscrollTargetAppsUpdate(doomscrollTargetApps + "All Social Media")
-                                    }
-                                    appDropdownExpanded = false
-                                }
-                            )
                             installedApps.forEach { (pkg, label) ->
                                 DropdownMenuItem(
                                     text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
@@ -1842,9 +1849,7 @@ fun ConfigurationWorkspace(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             doomscrollTargetApps.forEach { pkg ->
-                                val label = if (pkg == "All Social Media") "All Social Media" else {
-                                    installedApps.find { it.first == pkg }?.second ?: pkg
-                                }
+                                val label = installedApps.find { it.first == pkg }?.second ?: pkg
                                 InputChip(
                                     text = label,
                                     onRemove = { onDoomscrollTargetAppsUpdate(doomscrollTargetApps - pkg) },
@@ -2493,11 +2498,7 @@ fun UsageLimitsConfigDialog(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         localTargetAppSet.forEach { pkg ->
-                            val label = if (pkg == "All Social Media") {
-                                "All Social Media"
-                            } else {
-                                installedApps.find { it.first == pkg }?.second ?: pkg
-                            }
+                            val label = installedApps.find { it.first == pkg }?.second ?: pkg
                             InputChip(
                                 text = label,
                                 onRemove = { localTargetAppSet = localTargetAppSet - pkg },
@@ -2915,7 +2916,7 @@ fun BlockSlotEditor(
                     .background(MutedSurface)
                     .border(1.dp, OutlineAccent)
             ) {
-                installedApps.filter { it.first != "All Social Media" }.forEach { (pkg, label) ->
+                installedApps.forEach { (pkg, label) ->
                     DropdownMenuItem(
                         text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
                         onClick = {
@@ -2937,11 +2938,7 @@ fun BlockSlotEditor(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 block.targetApps.forEach { pkg ->
-                    val label = if (pkg == "All Social Media") {
-                        "All Social Media"
-                    } else {
-                        installedApps.find { it.first == pkg }?.second ?: pkg
-                    }
+                    val label = installedApps.find { it.first == pkg }?.second ?: pkg
                     InputChip(
                         text = label,
                         onRemove = {

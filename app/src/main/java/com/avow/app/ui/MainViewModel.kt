@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.datastore.preferences.core.Preferences
 import com.avow.app.data.VowDataStore
 import com.avow.app.model.VowBlock
 import com.avow.app.receiver.DeviceAdmin
@@ -30,8 +31,20 @@ class MainViewModel @JvmOverloads constructor(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    // Guards the one-time full reconciliation so ongoing DataStore emissions take the light path.
+    private var hasLoadedOnce = false
+
     init {
         loadInstalledApps()
+        viewModelScope.launch {
+            // Persist the tamper fallback before we start reading, so a tampered state is repaired
+            // even when the accessibility service isn't running to do it.
+            try {
+                vowDataStore.repairTamperedStateIfNeeded()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Tamper repair failed", e)
+            }
+        }
         loadState()
         startCountdownTicker()
     }
@@ -66,8 +79,41 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun loadState() {
         viewModelScope.launch {
+            // Observe the DataStore continuously so state the BlockerService writes (temporary
+            // lockouts, doomscroll accumulation, tamper/boot escalation) reaches the UI without a
+            // process restart. The first emission does a full reconcile; later ones take the light
+            // path so user-edited config stays UI-owned (one-way UI -> DataStore).
+            vowDataStore.preferencesFlow.collect { prefs ->
+                if (hasLoadedOnce) applyLiveUpdate(prefs) else applyInitialLoad(prefs)
+            }
+        }
+    }
+
+    /**
+     * Live sync of the handful of fields the service owns. Deliberately does NOT touch user config,
+     * the countdown digits (the ticker owns those), the frozen* baselines, or the current screen —
+     * only the service-written values, plus a full re-reconcile if a vow was force-activated
+     * underneath us (tamper fallback / boot).
+     */
+    private fun applyLiveUpdate(prefs: Preferences) {
+        val prefVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
+        if (prefVowActive && !_uiState.value.isVowActive) {
+            applyInitialLoad(prefs)
+            return
+        }
+        val lockoutEnd = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+        val doomAcc = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
+        _uiState.update { it.copy(temporaryLockoutEndTime = lockoutEnd, doomscrollAccumulatedMs = doomAcc) }
+    }
+
+    /**
+     * Full first-load reconciliation: maps every field, runs the countdown/DeviceAdmin catch-up,
+     * and picks the initial screen. Runs once, or again if a tamper/boot escalation forces a vow.
+     */
+    private fun applyInitialLoad(prefs: Preferences) {
+        hasLoadedOnce = true
+        viewModelScope.launch {
             try {
-                val prefs = vowDataStore.preferencesFlow.first()
                 val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                 val isActiveVowMode = prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false
                 val deactivationRequestTime = prefs[VowDataStore.DEACTIVATION_REQUEST_TIME] ?: 0L
