@@ -9,6 +9,8 @@ import android.content.Context
  */
 class LiteEnforcementCapabilities(context: Context) : EnforcementCapabilities {
 
+    override val supportsDeviceOwnerFeatures: Boolean = false
+
     override val isDeviceOwnerActive: Boolean = false
 
     override fun assertBindingVow(

@@ -326,6 +326,7 @@ fun MainScreen(
                     },
                     isLocked = uiState.isVowActive,
                     isDeviceOwner = uiState.isDeviceOwner,
+                    deviceOwnerSupported = uiState.deviceOwnerSupported,
                     doomscrollShieldEnabled = uiState.doomscrollShieldEnabled,
                     onDoomscrollShieldToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
@@ -1408,6 +1409,7 @@ fun ConfigurationWorkspace(
     onBack: () -> Unit,
     isLocked: Boolean,
     isDeviceOwner: Boolean,
+    deviceOwnerSupported: Boolean,
     doomscrollShieldEnabled: Boolean,
     onDoomscrollShieldToggle: () -> Unit,
     doomscrollAllTime: Boolean,
@@ -1437,7 +1439,7 @@ fun ConfigurationWorkspace(
         RestrictionItem("DISALLOW DATA WIPE", "DISALLOW_APPS_CONTROL", disallowDataWipe, onDisallowDataWipeToggle, requiresDeviceOwner = true),
         RestrictionItem("DISABLE SAFE BOOT", "DISALLOW_SAFE_BOOT", disableSafeBoot, onDisableSafeBootToggle, requiresDeviceOwner = true),
         RestrictionItem("BLOCK PLAY STORE", "com.android.vending", blockPlayStore, onBlockPlayStoreToggle, requiresDeviceOwner = true),
-        RestrictionItem("DYNAMIC REINSTALL GUARD", "ACTION_PACKAGE_ADDED", dynamicReinstall, onDynamicReinstallToggle, requiresDeviceOwner = false),
+        RestrictionItem("DYNAMIC REINSTALL GUARD", "ACTION_PACKAGE_ADDED", dynamicReinstall, onDynamicReinstallToggle, requiresDeviceOwner = true),
         RestrictionItem("DEACTIVATE USB DEBUGGING", "DISALLOW_DEBUGGING_FEATURES", deactivateUsbDebugging, onDeactivateUsbDebuggingToggle, requiresDeviceOwner = true)
     )
 
@@ -1502,53 +1504,59 @@ fun ConfigurationWorkspace(
             )
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        // 3. List of ENFORCEMENT RESTRICTIONS & Target profiles.
+        // Device-owner-only rows are omitted entirely in the lite build (they can never work there),
+        // rather than shown permanently disabled. In full they show, greyed until Device Owner is
+        // provisioned.
+        val visibleRestrictions = restrictionsList.filter { deviceOwnerSupported || !it.requiresDeviceOwner }
+        if (visibleRestrictions.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(28.dp))
 
-        // 3. List of ENFORCEMENT RESTRICTIONS & Target profiles
-        Text(
-            text = "ENFORCEMENT RESTRICTIONS",
-            color = SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 8.dp)
-        )
+            Text(
+                text = "ENFORCEMENT RESTRICTIONS",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 8.dp)
+            )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .sharpBorder(1.dp, OutlineAccent)
-                .background(MutedSurface)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            restrictionsList.forEach { item ->
-                val isItemEnabled = if (item.requiresDeviceOwner) isDeviceOwner else true
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = isItemEnabled) { item.onToggle() }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (item.isChecked) "[x]" else "[ ]",
-                        color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else if (item.isChecked) MonospaceText else SubtextGrey,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                    Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .sharpBorder(1.dp, OutlineAccent)
+                    .background(MutedSurface)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                visibleRestrictions.forEach { item ->
+                    val isItemEnabled = if (item.requiresDeviceOwner) isDeviceOwner else true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = isItemEnabled) { item.onToggle() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = item.title,
-                            color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else MonospaceText,
+                            text = if (item.isChecked) "[x]" else "[ ]",
+                            color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else if (item.isChecked) MonospaceText else SubtextGrey,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(end = 12.dp)
                         )
+                        Column {
+                            Text(
+                                text = item.title,
+                                color = if (!isItemEnabled) SubtextGrey.copy(alpha = 0.5f) else MonospaceText,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
                     }
                 }
             }
@@ -1875,7 +1883,8 @@ fun ConfigurationWorkspace(
             }
         }
 
-        if (!isLocked) {
+        // The deactivate-device-owner control only makes sense in the full build.
+        if (!isLocked && deviceOwnerSupported) {
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier

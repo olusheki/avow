@@ -37,6 +37,7 @@ class MainViewModelTest {
 
     // Flavor-agnostic capabilities so the test doesn't depend on which flavor's factory is compiled.
     private val fakeCapabilities = object : EnforcementCapabilities {
+        override val supportsDeviceOwnerFeatures = true
         override val isDeviceOwnerActive = true
         override fun assertBindingVow(
             activate: Boolean, secureFolderEnabled: Boolean, privateSpaceEnabled: Boolean,
