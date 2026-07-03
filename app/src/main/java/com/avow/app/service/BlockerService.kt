@@ -133,6 +133,14 @@ class BlockerService : AccessibilityService() {
 
     private val doomscrollTracker = com.avow.app.util.DoomscrollTracker()
     private var allowedTimeTrackingJob: Job? = null
+
+    /**
+     * Whether the configured rules (scheduled blocks, usage limits, banned domains) should enforce.
+     * True when a timed vow is running (Passive or Active) OR the user chose Active mode — in which
+     * case the rules enforce on their own schedule with no vow required. This is NOT 24/7 blocking:
+     * each rule still respects its own window/limit; Active mode only removes the vow requirement.
+     */
+    private val isEnforcementActive: Boolean get() = isVowActive || isActiveVowMode
  
     override fun onCreate() {
         super.onCreate()
@@ -352,9 +360,10 @@ class BlockerService : AccessibilityService() {
                         (System.currentTimeMillis() - deactivationRequestTime) < 24L * 3600L * 1000L
                 // Only bounce the Settings screens that are *about aVow* — its app-info/force-stop/
                 // clear-data page and the accessibility toggle — not the whole Settings app, so a
-                // multi-day vow doesn't block Wi-Fi, battery, etc. Guarded by active-mode vow (to
-                // stop disabling the service mid-vow) or the deactivation cooling-off window.
-                if ((isCoolingOff || (isVowActive && isActiveVowMode)) && isSettingsScreenAboutSelf()) {
+                // multi-day vow doesn't block Wi-Fi, battery, etc. Applies during ANY running vow
+                // (passive too — the user shouldn't be able to disable the service or wipe data to
+                // escape a vow) and during the deactivation cooling-off window.
+                if ((isCoolingOff || isEnforcementActive) && isSettingsScreenAboutSelf()) {
                     performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                     return
                 }
@@ -367,7 +376,8 @@ class BlockerService : AccessibilityService() {
                 manageTrackingJob()
             }
 
-            if (!isVowActive) return
+            // Enforce when a vow is running OR the user chose Active mode (rules apply without a vow).
+            if (!isEnforcementActive) return
 
             // 1. Check profile stubs (Samsung Secure Folder & Android 15 Private Space)
             if ((secureFolderEnabled && pkgName == "com.samsung.knox.securefolder") ||
@@ -401,14 +411,6 @@ class BlockerService : AccessibilityService() {
                     } finally {
                         rootNode.recycle()
                     }
-                }
-            }
-
-            // 2.5. Active Vow Mode continuous lockout check (blocks restricted apps and specific domains 24/7)
-            if (isActiveVowMode && isVowActive) {
-                if (isRestrictedAppPackage(pkgName) || isBrowserWithSpecificDomain(pkgName)) {
-                    triggerBlackoutOverlay()
-                    return
                 }
             }
 
@@ -548,12 +550,12 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBrowserWithSpecificDomain(pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isEnforcementActive) return false
         return isTargetBrowserWithSpecificDomain(pkgName)
     }
 
     private fun isCurrentlyRestrictedForUsage(): Boolean {
-        if (!isVowActive) return false
+        if (!isEnforcementActive) return false
         if (isRestrictedAppPackage(currentForegroundPackage)) return true
         if (isBrowserWithSpecificDomain(currentForegroundPackage)) return true
         return false
@@ -567,12 +569,12 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isEnforcementActive) return false
         return block.targetApps.contains(pkgName)
     }
 
     private fun isRestrictedAppPackage(pkgName: String): Boolean {
-        if (!isVowActive) return false
+        if (!isEnforcementActive) return false
         return isTargetAppPackage(pkgName)
     }
 
@@ -688,7 +690,9 @@ class BlockerService : AccessibilityService() {
     private fun isSettingsScreenAboutSelf(): Boolean {
         val root = rootInActiveWindow ?: return false
         return try {
-            nodeTreeContainsText(root, selfLabel, maxDepth = 12, currentDepth = 0)
+            // Deep scan: on some OEMs (e.g. Samsung) the app label on the App info / Storage page
+            // is nested well below a shallow cap, which is why those screens weren't being caught.
+            nodeTreeContainsText(root, selfLabel, maxDepth = 40, currentDepth = 0)
         } finally {
             root.recycle()
         }
