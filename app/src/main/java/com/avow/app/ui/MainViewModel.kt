@@ -358,16 +358,17 @@ class MainViewModel @JvmOverloads constructor(
                             )
                             viewModelScope.launch { vowDataStore.clearVowConfig() }
                             showToast("aVow: Temporal lock has expired. Restrictions cleared.")
-                            updateState { 
+                            updateState {
                                 copy(
-                                    isVowActive = false, 
-                                    isActiveVowMode = false, 
+                                    isVowActive = false,
+                                    // Keep the user's Passive/Active choice after the vow ends —
+                                    // it's a preference, not tied to a single vow's lifecycle.
                                     currentState = ScreenState.UNLOCKED_VAULT,
                                     isCollectiveLimit = false,
                                     vowStartTimeMs = 0L,
                                     vowInitialDurationSeconds = 0L,
                                     days = 0, hours = 0, minutes = 0, seconds = 0
-                                ) 
+                                )
                             }
                         } else {
                             val d = (totalRemaining / 86400).toInt()
