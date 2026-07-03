@@ -243,6 +243,22 @@ and can start immediately if you want to unblock it early (per the existing
 
 ---
 
+## W3.5 · `fix/enforcement-followups`  *(device-testing fallout from W3)*
+Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 green.
+- **Active mode did nothing without a running vow** — all enforcement was gated on `isVowActive`,
+  so choosing Active mode (which is meant to enforce the configured rules *without* a vow) had no
+  effect. Fixed by gating on `isEnforcementActive = isVowActive || isActiveVowMode`; each rule still
+  respects its own schedule (a 10pm–7am block only fires 10pm–7am — Active mode just removes the vow
+  requirement). Removed the old "continuous 24/7 lockout" section, which was a misreading of the
+  semantics. See [[vow-mode-semantics]].
+- **Settings intercept** now applies during any active enforcement (passive vow too — you shouldn't
+  be able to disable the service or wipe data to escape a vow), and the app-label scan depth was
+  raised 12 → 40 (Samsung App info / Storage nests the label deep, so those screens weren't caught).
+- **Vow mode reset to Passive when a vow ended** — `IS_ACTIVE_VOW_MODE` is now preserved as the
+  user's persistent preference.
+- Still open (low priority): manual-clock-change "punishment" sets a cooldown silently (only felt if
+  a target app is opened) — cosmetic; the timer itself correctly ignores wall-clock changes.
+
 ## W4 · `feat/play-compliance-lite`  *(largest; develop in parallel, integrate last)*
 
 > Verified against current policy (2026): accessibility review tightened Jan 2026;

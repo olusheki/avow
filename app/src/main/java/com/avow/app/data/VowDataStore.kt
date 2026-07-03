@@ -525,7 +525,8 @@ class VowDataStore(private val context: Context) {
             // An in-flight doomscroll cooldown (TEMPORARY_LOCKOUT_END_TIME) is also preserved:
             // it is a doomscroll consequence, independent of the vow that just ended.
             preferences[IS_VOW_ACTIVE] = false
-            preferences[IS_ACTIVE_VOW_MODE] = false
+            // IS_ACTIVE_VOW_MODE is intentionally preserved — it's the user's Passive/Active
+            // preference and should persist across vows, not reset to Passive on completion.
             preferences[REMAINING_VOW_SECONDS] = 0L
             preferences[LAST_SYSTEM_UPTIME_MILLIS] = 0L
             preferences[ACCUMULATED_USAGE_MS] = 0L
