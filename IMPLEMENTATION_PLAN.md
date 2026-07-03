@@ -32,7 +32,10 @@ and can start immediately if you want to unblock it early (per the existing
 
 ---
 
-## W1 · `refactor/viewmodel-datastore-flow`  *(foundation — do first)*
+## W1 · `refactor/viewmodel-datastore-flow`  *(foundation — do first)* · ✅ DONE (2026-07-03)
+> Branch `refactor/viewmodel-datastore-flow`, 5 commits. All 5 tasks landed; suite 77→80 green
+> (added `TamperRepairTest`). Live-update path is scoped to service-owned fields only (lockout end
+> time, doomscroll accumulation, tamper/boot escalation) so user config stays one-way UI→DataStore.
 
 ### W1-T1 · MainViewModel must observe the DataStore, not read it once  `[R]` · L
 - **Problem:** `MainViewModel.loadState()` calls `preferencesFlow.first()` exactly once at init. Any
