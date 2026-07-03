@@ -94,7 +94,9 @@ and can start immediately if you want to unblock it early (per the existing
 
 ---
 
-## W2 · `refactor/cleanup-and-data-model`
+## W2 · `refactor/cleanup-and-data-model` · ✅ DONE (2026-07-03)
+> Branch `refactor/cleanup-and-data-model`, 3 commits (T1 landed earlier on `main`). Suite 80 green,
+> debug build clean. Note: `VowDbHelper` and `computeStateSignature` were kept (both still in use).
 
 ### W2-T1 · Remove the "All Social Media" magic string  `[U]` · M · ✅ DONE (2026-07-03)
 > Removed: `SOCIAL_MEDIA_PACKAGES` set, the dead `isQuietHoursRestrictedAppPackage`, the
