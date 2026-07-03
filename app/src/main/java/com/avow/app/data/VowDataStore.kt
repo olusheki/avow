@@ -299,7 +299,36 @@ class VowDataStore(private val context: Context) {
             }
         }
     }
- 
+
+    /**
+     * Persists the strict-lockout fallback when the stored signature is invalid. [preferencesFlow]
+     * already emits the corrected state in-memory for immediate safety, but never wrote it back — so
+     * it only "stuck" on the next unrelated save. Call once at startup. Idempotent: once a valid
+     * signature is written, subsequent calls are no-ops (so it can't loop or fight a valid state).
+     */
+    suspend fun repairTamperedStateIfNeeded() {
+        val isUnlocked = try {
+            context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Throwable) {
+            true
+        }
+        if (!isUnlocked) return
+        context.dataStore.edit { preferences ->
+            if (isSignatureValid(preferences)) return@edit
+            preferences[IS_VOW_ACTIVE] = true
+            preferences[IS_ACTIVE_VOW_MODE] = true
+            preferences[REMAINING_VOW_SECONDS] = maxOf(preferences[REMAINING_VOW_SECONDS] ?: 0L, 7L * 24L * 3600L)
+            preferences[SECURE_FOLDER_ENABLED] = true
+            preferences[PRIVATE_SPACE_ENABLED] = true
+            preferences[LOCK_UNINSTALL] = true
+            preferences[DISALLOW_DATA_WIPE] = true
+            preferences[DISABLE_SAFE_BOOT] = true
+            preferences[BLOCK_PLAY_STORE] = true
+            preferences[DEACTIVATE_USB_DEBUGGING] = true
+            preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
     suspend fun saveVowConfig(
         isVowActive: Boolean,
         isActiveVowMode: Boolean,

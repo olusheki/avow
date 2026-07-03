@@ -139,7 +139,11 @@ class BlockerService : AccessibilityService() {
             addAction(Intent.ACTION_SCREEN_OFF)
         }
         registerReceiver(userPresentReceiver, presenceFilter)
-        
+
+        // Persist the strict-lockout fallback if the signed state was tampered with (the read flow
+        // only corrects it in memory otherwise). The service is the boot-time enforcement anchor.
+        serviceScope.launch { vowDataStore.repairTamperedStateIfNeeded() }
+
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
             var previousIsVowActive = false

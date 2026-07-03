@@ -36,6 +36,15 @@ class MainViewModel @JvmOverloads constructor(
 
     init {
         loadInstalledApps()
+        viewModelScope.launch {
+            // Persist the tamper fallback before we start reading, so a tampered state is repaired
+            // even when the accessibility service isn't running to do it.
+            try {
+                vowDataStore.repairTamperedStateIfNeeded()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Tamper repair failed", e)
+            }
+        }
         loadState()
         startCountdownTicker()
     }
