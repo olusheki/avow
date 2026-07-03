@@ -146,7 +146,6 @@ class BlockerService : AccessibilityService() {
 
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
-            var previousIsVowActive = false
             vowDataStore.preferencesFlow.collect { prefs ->
                 val activeNow = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                 
@@ -200,8 +199,7 @@ class BlockerService : AccessibilityService() {
                 }
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
-                
-                previousIsVowActive = activeNow
+
                 manageAllowedTimeTracking()
 
                 // Import persisted usage only when seeding (service start / between vows). While a
@@ -648,7 +646,7 @@ class BlockerService : AccessibilityService() {
                 "Doomscroll Warning",
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifies when continuous scrolling limit is reached"
+                description = "Notifies when the time limit in a target app is nearly reached"
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -667,7 +665,7 @@ class BlockerService : AccessibilityService() {
         val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Doomscroll Warning")
-            .setContentText("You have been scrolling for too long. Tap to bind a 15-minute vow.")
+            .setContentText("You've spent a while in here. Tap to bind a 15-minute vow.")
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)

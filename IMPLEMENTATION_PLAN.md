@@ -94,7 +94,9 @@ and can start immediately if you want to unblock it early (per the existing
 
 ---
 
-## W2 · `refactor/cleanup-and-data-model`
+## W2 · `refactor/cleanup-and-data-model` · ✅ DONE (2026-07-03)
+> Branch `refactor/cleanup-and-data-model`, 3 commits (T1 landed earlier on `main`). Suite 80 green,
+> debug build clean. Note: `VowDbHelper` and `computeStateSignature` were kept (both still in use).
 
 ### W2-T1 · Remove the "All Social Media" magic string  `[U]` · M · ✅ DONE (2026-07-03)
 > Removed: `SOCIAL_MEDIA_PACKAGES` set, the dead `isQuietHoursRestrictedAppPackage`, the
@@ -135,13 +137,13 @@ and can start immediately if you want to unblock it early (per the existing
   time-based wording (handled in W5-T8's copy pass).
 
 ### W2-T3 · Delete dead code  `[R]` · S
-- `data/history/VowDbHelper.kt` (superseded by Room `VowDatabase`) — delete the file.
-- `VowValidator.SALT` and `VowValidator.computeStateSignature(...)` — unused; remove.
-- `DashboardPanelButton` `subtitle` / `panelThreeSubtitle` / `"RESTRICTION_2"` plumbing — always
-  empty; remove the parameter.
-- `previousIsVowActive` in the `BlockerService` collector — assigned, never read; remove.
-- **Risk:** Grep each symbol before deleting; `computeStateSignature` may be referenced by an older
-  test — update or drop that test.
+- **NOT dead (keep):** `VowDbHelper.kt` — the history store is hand-rolled SQLite; `VowDatabase` and
+  `VowSessionDao` depend on it (the README's "Room" claim is wrong). `VowValidator.computeStateSignature`
+  — used by `DataStoreIntegrityTest` and `StateSignatureTest`.
+- **Remove:** `VowValidator.SALT` (unused const); `previousIsVowActive` in the `BlockerService`
+  collector (assigned, never read); `panelThreeSubtitle` param + `"RESTRICTION_2"` arg (param never
+  used in the body); `DashboardPanelButton.subtitle` param + its 3 empty call args + the dead
+  `if (subtitle.isNotEmpty())` block.
 
 ### W2-T4 · Move startup work off the main thread  `[R]` · S
 - **Problem:** `MainViewModel.loadInstalledApps()` runs a synchronous `PackageManager.queryIntentActivities`

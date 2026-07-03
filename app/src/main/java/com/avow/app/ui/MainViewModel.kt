@@ -50,31 +50,35 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     private fun loadInstalledApps() {
-        val pm = getApplication<Application>().packageManager
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
-        val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
-        val list = resolveInfos.map {
-            val packageName = it.activityInfo.packageName
-            val label = it.loadLabel(pm).toString()
-            packageName to label
-        }.distinctBy { it.first }.sortedBy { it.second }
+        // Off the main thread: querying + loading labels for every launchable app is slow enough
+        // to jank startup. The StateFlow update is thread-safe, so publishing from IO is fine.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val pm = getApplication<Application>().packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+            val list = resolveInfos.map {
+                val packageName = it.activityInfo.packageName
+                val label = it.loadLabel(pm).toString()
+                packageName to label
+            }.distinctBy { it.first }.sortedBy { it.second }
 
-        val apps = if (list.isEmpty()) {
-            listOf(
-                "com.instagram.android" to "Instagram",
-                "com.sec.android.app.sbrowser" to "Samsung Internet",
-                "com.android.chrome" to "Chrome",
-                "com.facebook.katana" to "Facebook",
-                "com.twitter.android" to "X / Twitter",
-                "com.tiktok.android" to "TikTok",
-                "com.youtube.android" to "YouTube"
-            )
-        } else {
-            list
+            val apps = if (list.isEmpty()) {
+                listOf(
+                    "com.instagram.android" to "Instagram",
+                    "com.sec.android.app.sbrowser" to "Samsung Internet",
+                    "com.android.chrome" to "Chrome",
+                    "com.facebook.katana" to "Facebook",
+                    "com.twitter.android" to "X / Twitter",
+                    "com.tiktok.android" to "TikTok",
+                    "com.youtube.android" to "YouTube"
+                )
+            } else {
+                list
+            }
+            updateState { copy(installedApps = apps) }
         }
-        updateState { copy(installedApps = apps) }
     }
 
     private fun loadState() {
