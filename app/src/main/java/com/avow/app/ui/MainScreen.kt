@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.RectangleShape
-import com.avow.app.receiver.DeviceAdmin
 import com.avow.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
