@@ -34,6 +34,12 @@ class BootReceiver : BroadcastReceiver() {
                     val prefs = vowDataStore.preferencesFlow.first()
                     val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                     Log.d("BootReceiver", "Checked DataStore. isVowActive: $isVowActive")
+
+                    // A doomscroll cooldown end time is elapsedRealtime-based and meaningless after a
+                    // reboot (uptime restarts near zero), so it would massively over-enforce. Clear it.
+                    if ((prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L) > 0L) {
+                        vowDataStore.saveTemporaryLockoutEndTime(0L)
+                    }
                     
                     if (isVowActive) {
                         Log.d("BootReceiver", "Vow active, launching MainActivity")

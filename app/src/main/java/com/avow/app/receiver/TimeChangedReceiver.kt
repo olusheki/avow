@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import com.avow.app.data.VowDataStore
 import kotlinx.coroutines.CoroutineScope
@@ -16,7 +17,17 @@ class TimeChangedReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.d("TimeChangedReceiver", "Time change detected: $action")
         
-        if (action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED) {
+        // Timezone changes don't affect the uptime-based vow clock, and automatic NTP corrections
+        // aren't a bypass attempt — only a manual clock change (auto-time off) is worth punishing.
+        if (action != Intent.ACTION_TIME_CHANGED) return
+        val autoTimeOn = try {
+            Settings.Global.getInt(context.contentResolver, Settings.Global.AUTO_TIME, 1) == 1
+        } catch (e: Exception) {
+            true
+        }
+        if (autoTimeOn) return
+
+        run {
             val vowDataStore = VowDataStore(context.applicationContext)
             val pendingResult = goAsync()
             

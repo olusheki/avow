@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
    See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   Note: This file is ignored for devices older than API 31.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- The vow settings are HMAC-signed with a non-exportable AndroidKeyStore key. Restoring the
+         prefs onto a new device (where the key is absent) would fail the signature check and force
+         the strict 7-day fallback lockout, so exclude them from backup. -->
+    <exclude domain="file" path="datastore/vow_settings.preferences_pb"/>
 </full-backup-content>

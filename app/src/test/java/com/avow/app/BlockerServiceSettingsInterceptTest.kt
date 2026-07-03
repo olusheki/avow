@@ -56,15 +56,49 @@ class BlockerServiceSettingsInterceptTest {
         // Mock performGlobalAction to return true
         every { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) } returns true
 
+        // The intercept is now scoped to Settings screens *about aVow*: stub a window that names it.
+        val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { rootNode.text } returns "aVow"
+        every { rootNode.contentDescription } returns null
+        every { rootNode.childCount } returns 0
+        every { service.rootInActiveWindow } returns rootNode
+
         val event = mockk<AccessibilityEvent>(relaxed = true)
         every { event.packageName } returns "com.android.settings"
         every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
 
-        // WHEN: User opens System Settings
+        // WHEN: User opens the aVow app-info / accessibility screen in Settings
         service.onAccessibilityEvent(event)
 
         // THEN: Accessibility service must execute GLOBAL_ACTION_HOME redirect
         verify(exactly = 1) { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
+    }
+
+    @Test
+    fun testGeneralSettingsAllowedDuringActiveVow() {
+        // GIVEN: an active-mode vow, but the Settings window is NOT about aVow (e.g. Wi-Fi).
+        val isVowActiveField = BlockerService::class.java.getDeclaredField("isVowActive")
+        isVowActiveField.isAccessible = true
+        isVowActiveField.set(service, true)
+        val isActiveVowModeField = BlockerService::class.java.getDeclaredField("isActiveVowMode")
+        isActiveVowModeField.isAccessible = true
+        isActiveVowModeField.set(service, true)
+
+        val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { rootNode.text } returns "Wi-Fi"
+        every { rootNode.contentDescription } returns null
+        every { rootNode.childCount } returns 0
+        every { service.rootInActiveWindow } returns rootNode
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.settings"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: User opens a general Settings screen
+        service.onAccessibilityEvent(event)
+
+        // THEN: it is NOT bounced — only aVow-specific screens are blocked
+        verify(exactly = 0) { service.performGlobalAction(any()) }
     }
 
     @Test
@@ -107,11 +141,18 @@ class BlockerServiceSettingsInterceptTest {
         // Mock performGlobalAction to return true
         every { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) } returns true
 
+        // Scoped intercept: the cooling-off window still bounces the aVow-specific Settings screen.
+        val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { rootNode.text } returns "aVow"
+        every { rootNode.contentDescription } returns null
+        every { rootNode.childCount } returns 0
+        every { service.rootInActiveWindow } returns rootNode
+
         val event = mockk<AccessibilityEvent>(relaxed = true)
         every { event.packageName } returns "com.android.settings"
         every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
 
-        // WHEN: User opens System Settings
+        // WHEN: User opens the aVow Settings screen during cooling-off
         service.onAccessibilityEvent(event)
 
         // THEN: Accessibility service must execute GLOBAL_ACTION_HOME redirect
@@ -222,10 +263,11 @@ class BlockerServiceSettingsInterceptTest {
         isVowActiveField.isAccessible = true
         isVowActiveField.set(service, true)
 
-        // Mock AccessibilityNodeInfo
+        // Mock AccessibilityNodeInfo. Detection now keys on the toolbar badge's content description
+        // (not arbitrary page text), so the incognito signal is set there.
         val rootNode = mockk<AccessibilityNodeInfo>(relaxed = true)
-        every { rootNode.text } returns "Incognito"
-        every { rootNode.contentDescription } returns null
+        every { rootNode.text } returns null
+        every { rootNode.contentDescription } returns "Incognito"
         every { rootNode.childCount } returns 0
         every { service.rootInActiveWindow } returns rootNode
 

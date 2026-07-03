@@ -127,6 +127,9 @@ class BlockerService : AccessibilityService() {
     @Volatile private var doomscrollTrackerSeeded = false
     @Volatile private var lastOverlayLaunchMs = 0L
     private var doomscrollTicksSinceFlush = 0
+    // Our own app label, used to scope the Settings intercept to screens about aVow. Defaults to
+    // "aVow" so unit tests (which don't run onCreate) don't depend on resources.
+    @Volatile private var selfLabel = "aVow"
 
     private val doomscrollTracker = com.avow.app.util.DoomscrollTracker()
     private var allowedTimeTrackingJob: Job? = null
@@ -134,6 +137,7 @@ class BlockerService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
+        selfLabel = try { getString(com.avow.app.R.string.app_name) } catch (e: Throwable) { "aVow" }
         val presenceFilter = android.content.IntentFilter().apply {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -274,7 +278,7 @@ class BlockerService : AccessibilityService() {
             val activeUrl = currentBrowserUrl
             if (activeUrl.isNotEmpty()) {
                 val isBanned = banDomainSet.any { domain ->
-                    activeUrl.contains(domain, ignoreCase = true)
+                    com.avow.app.util.DomainUtil.matchesHost(activeUrl, domain)
                 }
                 if (isBanned) return false
                 
@@ -346,9 +350,11 @@ class BlockerService : AccessibilityService() {
             if (SETTINGS_PACKAGES.contains(pkgName)) {
                 val isCoolingOff = deactivationRequestTime > 0L &&
                         (System.currentTimeMillis() - deactivationRequestTime) < 24L * 3600L * 1000L
-                // Settings stays blocked during an active-mode vow (prevents disabling the
-                // accessibility service mid-vow) and during the deactivation cooling-off window.
-                if (isCoolingOff || (isVowActive && isActiveVowMode)) {
+                // Only bounce the Settings screens that are *about aVow* — its app-info/force-stop/
+                // clear-data page and the accessibility toggle — not the whole Settings app, so a
+                // multi-day vow doesn't block Wi-Fi, battery, etc. Guarded by active-mode vow (to
+                // stop disabling the service mid-vow) or the deactivation cooling-off window.
+                if ((isCoolingOff || (isVowActive && isActiveVowMode)) && isSettingsScreenAboutSelf()) {
                     performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                     return
                 }
@@ -385,7 +391,7 @@ class BlockerService : AccessibilityService() {
                         currentBrowserUrl = activeUrl
                         if (activeUrl.isNotEmpty()) {
                             val isBanned = banDomainSet.any { domain ->
-                                activeUrl.contains(domain, ignoreCase = true)
+                                com.avow.app.util.DomainUtil.matchesHost(activeUrl, domain)
                             }
                             if (isBanned) {
                                 triggerBlackoutOverlay()
@@ -673,6 +679,42 @@ class BlockerService : AccessibilityService() {
         notificationManager.notify(2002, builder.build())
     }
 
+    /**
+     * True when the current Settings screen is about aVow itself — its app-info / force-stop /
+     * clear-data page, the accessibility services list/detail, or the "allow full control" dialog.
+     * Detected by our app label appearing in the Settings window; general Settings screens
+     * (Wi-Fi, battery, display) never mention it and stay reachable.
+     */
+    private fun isSettingsScreenAboutSelf(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        return try {
+            nodeTreeContainsText(root, selfLabel, maxDepth = 12, currentDepth = 0)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun nodeTreeContainsText(
+        node: AccessibilityNodeInfo,
+        target: String,
+        maxDepth: Int,
+        currentDepth: Int
+    ): Boolean {
+        if (currentDepth > maxDepth || target.isEmpty()) return false
+        val t = node.text?.toString() ?: ""
+        val d = node.contentDescription?.toString() ?: ""
+        if (t.contains(target, ignoreCase = true) || d.contains(target, ignoreCase = true)) return true
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                if (nodeTreeContainsText(child, target, maxDepth, currentDepth + 1)) return true
+            } finally {
+                child.recycle()
+            }
+        }
+        return false
+    }
+
     /** Accessibility events arrive in bursts; avoid stacking startActivity calls. */
     private fun shouldDebounceOverlayLaunch(): Boolean {
         val now = SystemClock.elapsedRealtime()
@@ -806,22 +848,34 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun isIncognitoModeActive(node: AccessibilityNodeInfo, packageName: String): Boolean {
-        val text = node.text?.toString() ?: ""
+        return hasIncognitoIndicator(node, packageName, maxDepth = 8, currentDepth = 0)
+    }
+
+    /**
+     * Detects incognito/secret mode by the toolbar badge's accessibility *content description* only
+     * — never arbitrary page text. Matching visible text meant googling "incognito" or opening an
+     * article about it blacked out the screen. The badge is UI chrome and lives shallow, so we also
+     * cap the recursion depth.
+     */
+    private fun hasIncognitoIndicator(
+        node: AccessibilityNodeInfo,
+        packageName: String,
+        maxDepth: Int,
+        currentDepth: Int
+    ): Boolean {
+        if (currentDepth > maxDepth) return false
         val desc = node.contentDescription?.toString() ?: ""
         if (packageName == "com.android.chrome") {
-            if (text.contains("Incognito", ignoreCase = true) || desc.contains("Incognito", ignoreCase = true)) {
-                return true
-            }
+            if (desc.contains("Incognito", ignoreCase = true)) return true
         } else if (packageName == "com.sec.android.app.sbrowser") {
-            if (text.contains("Secret mode", ignoreCase = true) || desc.contains("Secret mode", ignoreCase = true) ||
-                text.contains("SecretMode", ignoreCase = true) || desc.contains("SecretMode", ignoreCase = true)) {
+            if (desc.contains("Secret mode", ignoreCase = true) || desc.contains("SecretMode", ignoreCase = true)) {
                 return true
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             try {
-                if (isIncognitoModeActive(child, packageName)) {
+                if (hasIncognitoIndicator(child, packageName, maxDepth, currentDepth + 1)) {
                     return true
                 }
             } finally {
