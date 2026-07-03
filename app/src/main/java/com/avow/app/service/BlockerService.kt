@@ -274,7 +274,7 @@ class BlockerService : AccessibilityService() {
             val activeUrl = currentBrowserUrl
             if (activeUrl.isNotEmpty()) {
                 val isBanned = banDomainSet.any { domain ->
-                    activeUrl.contains(domain, ignoreCase = true)
+                    com.avow.app.util.DomainUtil.matchesHost(activeUrl, domain)
                 }
                 if (isBanned) return false
                 
@@ -385,7 +385,7 @@ class BlockerService : AccessibilityService() {
                         currentBrowserUrl = activeUrl
                         if (activeUrl.isNotEmpty()) {
                             val isBanned = banDomainSet.any { domain ->
-                                activeUrl.contains(domain, ignoreCase = true)
+                                com.avow.app.util.DomainUtil.matchesHost(activeUrl, domain)
                             }
                             if (isBanned) {
                                 triggerBlackoutOverlay()
