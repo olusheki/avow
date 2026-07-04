@@ -19,12 +19,10 @@ object MascotMessages {
     const val RED_CLOSE = "[[/r]]"
 
     // --- Locked (an active vow is holding) ---
-    val lockedGreetings = listOf("system secure.", "vow holds.", "standing guard.", "status check.")
     val lockedContexts = listOf("You're holding the line.", "The lock is absolute.", "Focus is active.")
     val lockedTaglines = listOf("Stand tall.", "Stay serious.", "No compromises.", "Keep going.")
 
     // --- Unlocked (no vow active) ---
-    val unlockedGreetings = listOf("vault open.", "at rest.", "system idle.")
     val unlockedContexts = listOf("Ready when you are.", "No active restrictions.", "Establish a new vow.")
     val unlockedTaglines = listOf("Make a vow.", "Keep it tight.", "Prepare your focus.")
 
@@ -93,6 +91,16 @@ object MascotMessages {
         else
             "You're ${RED_OPEN}up $percentChange% screentime$RED_CLOSE than before. Let's work on that."
 
+    /** A short coach line for the block/intercept screen, chosen by why the block fired. */
+    fun interceptEncouragement(reason: String?): String = when (reason) {
+        "USAGE LIMIT" -> "That's your limit for now — back to it."
+        "SCHEDULED BLOCK" -> "Not during your quiet hours. Let it wait."
+        "BANNED SITE" -> "You asked me to keep this one shut. Holding."
+        "PRIVATE BROWSING" -> "No side doors. The vow still counts here."
+        "SECURE PROFILE" -> "That path is sealed while the vow holds."
+        else -> "You set this boundary. I'm keeping it."
+    }
+
     /** Reflection on the zen score. */
     fun zenScoreMessage(percentChange: Int): String =
         if (percentChange >= 0)
@@ -104,8 +112,7 @@ object MascotMessages {
      * Builds a single speech-bubble line.
      *
      * When [streakDays] is positive a streak template is returned; otherwise a fresh line is
-     * composed by drawing one greeting, one context and one tagline from the pool matching the
-     * lock state. Because each part is drawn from a distinct pool, no element repeats within a line.
+     * composed by drawing one context and one tagline from the pool matching the lock state.
      */
     fun generateMessage(
         isLocked: Boolean,
@@ -114,10 +121,9 @@ object MascotMessages {
     ): String {
         if (streakDays > 0) return streakMessage(streakDays)
 
-        val greetings = if (isLocked) lockedGreetings else unlockedGreetings
         val contexts = if (isLocked) lockedContexts else unlockedContexts
         val taglines = if (isLocked) lockedTaglines else unlockedTaglines
 
-        return "${greetings.random(random)} ${contexts.random(random)} ${taglines.random(random)}"
+        return "${contexts.random(random)} ${taglines.random(random)}"
     }
 }

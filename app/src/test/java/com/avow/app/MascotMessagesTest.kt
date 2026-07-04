@@ -13,22 +13,19 @@ import kotlin.random.Random
 class MascotMessagesTest {
 
     @Test
-    fun lockedMessage_combinesOneOfEachPool() {
+    fun lockedMessage_combinesContextAndTagline() {
         val msg = MascotMessages.generateMessage(isLocked = true, random = Random(0))
-        val greeting = MascotMessages.lockedGreetings.first { msg.startsWith(it) }
-        val remainder = msg.removePrefix("$greeting ")
-        val context = MascotMessages.lockedContexts.first { remainder.startsWith(it) }
-        val tagline = remainder.removePrefix("$context ")
+        val context = MascotMessages.lockedContexts.first { msg.startsWith(it) }
+        val tagline = msg.removePrefix("$context ")
 
         assertTrue(MascotMessages.lockedTaglines.contains(tagline))
-        assertEquals("$greeting $context $tagline", msg)
+        assertEquals("$context $tagline", msg)
     }
 
     @Test
     fun unlockedMessage_drawsFromUnlockedPools() {
         val msg = MascotMessages.generateMessage(isLocked = false, random = Random(42))
-        assertTrue(MascotMessages.unlockedGreetings.any { msg.startsWith(it) })
-        assertTrue(MascotMessages.unlockedContexts.any { msg.contains(it) })
+        assertTrue(MascotMessages.unlockedContexts.any { msg.startsWith(it) })
         assertTrue(MascotMessages.unlockedTaglines.any { msg.endsWith(it) })
     }
 
@@ -86,7 +83,7 @@ class MascotMessagesTest {
                 isLocked = true, days = 1, hours = 2, minutes = 3, seconds = 4,
                 zenDelta = null, random = Random(seed.toLong())
             )
-            assertFalse(MascotMessages.unlockedGreetings.any { line.startsWith(it) })
+            assertFalse(MascotMessages.unlockedContexts.any { line.startsWith(it) })
         }
     }
 
