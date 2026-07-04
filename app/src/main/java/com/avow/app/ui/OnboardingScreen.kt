@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.avow.app.service.BlockerService
@@ -59,6 +60,10 @@ fun OnboardingFlow(
     val context = LocalContext.current
 
     var slideIndex by remember { mutableStateOf(0) }
+
+    // Shown before we ever send the user to enable the accessibility service (Play prominent-
+    // disclosure requirement): the user must affirmatively consent first.
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
     // Slide 2 local state.
     var estimateHours by remember { mutableStateOf(2f) }
@@ -175,12 +180,7 @@ fun OnboardingFlow(
                 3 -> SlidePermissions(
                     notificationsEnabled = notificationsEnabled,
                     accessibilityEnabled = accessibilityEnabled,
-                    onEnableAccessibility = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
+                    onEnableAccessibility = { showAccessibilityDisclosure = true }
                 )
                 4 -> SlideVowMode(
                     isActiveVowMode = uiState.isActiveVowMode,
@@ -267,6 +267,19 @@ fun OnboardingFlow(
                 )
             }
         }
+    }
+
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAgree = {
+                showAccessibilityDisclosure = false
+                context.startActivity(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            },
+            onDismiss = { showAccessibilityDisclosure = false }
+        )
     }
 }
 
@@ -949,3 +962,70 @@ private fun hasUsageStatsPermission(context: Context): Boolean {
 /** Aggregates foreground time across social media apps only, over the last 24h, in hours. */
 private fun querySocialMediaHours(context: Context): Float =
     com.avow.app.util.SocialUsageStats.queryLastDayHours(context)
+
+/**
+ * Prominent-disclosure consent shown before we ever open the accessibility settings, per Google
+ * Play policy. States plainly what the accessibility service reads, why, and that nothing leaves
+ * the device — and requires an affirmative tap before proceeding.
+ */
+@Composable
+private fun AccessibilityDisclosureDialog(
+    onAgree: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LightGraphiteBg)
+                .sharpBorder(1.dp, OutlineAccent)
+                .padding(20.dp)
+        ) {
+            Text(
+                text = "aVow // ACCESSIBILITY ACCESS",
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(OutlineAccent)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "To hold your vows, aVow uses Android's Accessibility Service. It reads which " +
+                    "app is currently in the foreground and your browser's address bar, so it can " +
+                    "block the apps and websites you chose to restrict.\n\n" +
+                    "This information is used only to enforce your own limits. aVow does not collect, " +
+                    "store, or share it, and nothing ever leaves your device.\n\n" +
+                    "On the next screen, find aVow in the list and turn it on.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 19.sp
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SharpBorderButton(
+                    text = "{ NOT NOW }",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                )
+                WarmCtaButton(
+                    text = "I AGREE",
+                    enabled = true,
+                    onClick = onAgree,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
