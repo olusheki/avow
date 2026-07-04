@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">aVow</string>
     <string name="device_admin_description">Enforces unyielding digital binding vows for absolute distraction control.</string>
-    <string name="accessibility_service_description">Actively monitors device workspace boundaries and blocks distracting applications or restricted browser destinations.</string>
+    <string name="accessibility_service_description">aVow uses the accessibility service only to enforce the limits you set. It reads which app is in the foreground, and the address bar of your browser, so it can block the apps and websites you chose to restrict during your vows and scheduled blocks. It does not collect, store, or share your activity, and no data leaves your device.</string>
 </resources>

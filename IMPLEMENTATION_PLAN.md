@@ -335,6 +335,14 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
 - **Files:** `ui/MainScreen.kt` (`restrictionsList`, the `isItemEnabled` logic), capabilities
   interface.
 
+### W4-T5 (partial) + W4-T7 · Play compliance  `[U:9]` · ✅ DONE (2026-07-03) — branch `feat/play-compliance`
+> - Prominent-disclosure consent dialog before enabling accessibility (`AccessibilityDisclosureDialog`).
+> - `QUERY_ALL_PACKAGES` removed → scoped `<queries>` launcher-intent (verified absent from lite manifest).
+> - Expanded the accessibility-service description string shown in system settings.
+> - `PRIVACY_POLICY.md` (host it) + `PLAY_COMPLIANCE.md` (Permissions Declaration + Data Safety answers).
+> Both flavors 89/89. Remaining W4-T5 (the full onboarding permission *reordering* — accessibility as
+> optional upgrade) is only needed if the UsageStats rebuild happens; skipped for the accessibility path.
+
 ### W4-T7 · Play submission collateral  `[U:9]` · M
 - `QUERY_ALL_PACKAGES` → replace with a `<queries><intent>` launcher declaration if possible (you
   only enumerate launchable apps), else file the declaration.
