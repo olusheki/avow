@@ -283,7 +283,13 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
   at all** (reviewer optics). Confirm `assembleLiteDebug` and `assembleFullDebug` both compile.
 - **Size note:** mechanical; can start before W1/W2 merge.
 
-### W4-T2 · Compliant foreground detection: UsageStats + foreground service  `[U:9]` · XL
+> **Decision (2026-07-03):** keep the accessibility-based blocker in lite and invest in the Play
+> compliance paperwork instead (T5 + T7 below). Rebuild detection on UsageStats+overlay **only if
+> Google rejects for accessibility**. Rationale: the rebuild is a large runtime subsystem that can't
+> be unit-tested, many wellbeing blockers pass with accessibility + prominent disclosure, and the
+> paperwork is required either way. So **T2/T3 below are DEFERRED (contingency)**.
+
+### W4-T2 · Compliant foreground detection: UsageStats + foreground service  `[U:9]` · XL · ⏸ DEFERRED
 - **Goal:** Detect the foreground app **without** accessibility in lite.
 - **Approach:** A foreground `Service` (typed `specialUse` or `dataSync` per current FGS rules) polls
   `UsageStatsManager.queryEvents` (~1s) for `MOVE_TO_FOREGROUND`. Reuse the existing target-set /
@@ -314,7 +320,11 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
 - **Approach:** Per-flavor permission list. In lite, `continueBlocked` keys off overlay+usage, not
   accessibility. Add the disclosure copy naming exactly what each permission reads and why.
 
-### W4-T6 · Device-owner rows: omit in lite, ungray the genuinely no-DO ones  `[U:20]` `[R]` · M
+### W4-T6 · Device-owner rows: omit in lite, ungray the genuinely no-DO ones  `[U:20]` `[R]` · M · ✅ DONE (2026-07-03)
+> Branch `feat/lite-enforcement`. Added `supportsDeviceOwnerFeatures` to the capability interface
+> (full=true, lite=false); lite omits all `requiresDeviceOwner` rows, the whole ENFORCEMENT
+> RESTRICTIONS section when empty, and the deactivate button. Marked DYNAMIC REINSTALL GUARD full-only.
+> Both flavors compile; lite tests 89/89.
 - **Reality check:** Of the eight `ENFORCEMENT RESTRICTIONS`, Knox Secure Folder, Private Space,
   uninstall-lock, data-wipe, safe-boot, Play-Store-block, and USB-debugging **all require Device
   Owner** — none can be honestly "ungrayed" in lite; they must be **omitted** via

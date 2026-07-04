@@ -303,6 +303,7 @@ class MainViewModel @JvmOverloads constructor(
                             currentState
                         },
                         isDeviceOwner = isDeviceOwner,
+                        deviceOwnerSupported = capabilities.supportsDeviceOwnerFeatures,
                         isOnboardingCompleted = isOnboardingCompleted,
                         isLoaded = true
                     )

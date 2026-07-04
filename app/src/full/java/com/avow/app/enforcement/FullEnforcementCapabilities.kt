@@ -7,6 +7,8 @@ import com.avow.app.receiver.DeviceAdmin
 /** Full ("aVow Plus") build: real device-owner powers via [DeviceAdmin]. */
 class FullEnforcementCapabilities(private val context: Context) : EnforcementCapabilities {
 
+    override val supportsDeviceOwnerFeatures: Boolean = true
+
     override val isDeviceOwnerActive: Boolean
         get() = try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager

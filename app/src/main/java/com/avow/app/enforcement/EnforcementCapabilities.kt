@@ -10,6 +10,13 @@ package com.avow.app.enforcement
  */
 interface EnforcementCapabilities {
 
+    /**
+     * True in the full flavor (device-owner features *can* exist, once provisioned); false in lite.
+     * Drives whether the device-owner UI rows are shown at all — lite omits them entirely rather
+     * than showing permanently-disabled rows.
+     */
+    val supportsDeviceOwnerFeatures: Boolean
+
     /** True only when the app is genuinely Device Owner (full build, ADB-provisioned). Always false in lite. */
     val isDeviceOwnerActive: Boolean
 
