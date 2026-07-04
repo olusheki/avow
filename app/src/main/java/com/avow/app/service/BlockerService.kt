@@ -382,7 +382,7 @@ class BlockerService : AccessibilityService() {
             // 1. Check profile stubs (Samsung Secure Folder & Android 15 Private Space)
             if ((secureFolderEnabled && pkgName == "com.samsung.knox.securefolder") ||
                 (privateSpaceEnabled && pkgName == "com.google.android.apps.privatespace")) {
-                triggerBlackoutOverlay()
+                triggerBlackoutOverlay("SECURE PROFILE")
                 return
             }
 
@@ -393,7 +393,7 @@ class BlockerService : AccessibilityService() {
                     try {
                         // Check for Incognito/Secret mode window
                         if (isIncognitoModeActive(rootNode, pkgName)) {
-                            triggerBlackoutOverlay()
+                            triggerBlackoutOverlay("PRIVATE BROWSING")
                             return
                         }
 
@@ -404,7 +404,7 @@ class BlockerService : AccessibilityService() {
                                 com.avow.app.util.DomainUtil.matchesHost(activeUrl, domain)
                             }
                             if (isBanned) {
-                                triggerBlackoutOverlay()
+                                triggerBlackoutOverlay("BANNED SITE")
                                 return
                             }
                         }
@@ -418,13 +418,13 @@ class BlockerService : AccessibilityService() {
             for (block in vowBlocks) {
                 if (block.isEnabled && isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin)) {
                     if (isBlockRestrictedAppPackage(block, pkgName)) {
-                        triggerBlackoutOverlay()
+                        triggerBlackoutOverlay("SCHEDULED BLOCK")
                         return
                     }
                     if (block.specificDomain.isNotEmpty() && (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser")) {
                         val activeUrl = currentBrowserUrl
                         if (activeUrl.isNotEmpty() && com.avow.app.util.DomainUtil.matches(activeUrl, block.specificDomain)) {
-                            triggerBlackoutOverlay()
+                            triggerBlackoutOverlay("SCHEDULED BLOCK")
                             return
                         }
                     }
@@ -446,7 +446,7 @@ class BlockerService : AccessibilityService() {
                     (packageUsageCache[currentForegroundPackage] ?: 0L) >= limitMs
                 }
                 if (isExceeded) {
-                    triggerBlackoutOverlay()
+                    triggerBlackoutOverlay("USAGE LIMIT")
                     return
                 }
             }
@@ -545,7 +545,7 @@ class BlockerService : AccessibilityService() {
 
         flushSerialized?.let { vowDataStore.savePackageUsage(it, flushIntervalStart) }
         if (limitBreached) {
-            withContext(Dispatchers.Main) { triggerBlackoutOverlay() }
+            withContext(Dispatchers.Main) { triggerBlackoutOverlay("USAGE LIMIT") }
         }
     }
 
@@ -889,11 +889,12 @@ class BlockerService : AccessibilityService() {
         return false
     }
 
-    private fun triggerBlackoutOverlay() {
+    private fun triggerBlackoutOverlay(reason: String = "RESTRICTED") {
         if (shouldDebounceOverlayLaunch()) return
         val overlayIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("TRIGGER_INTRUSION", true)
+            putExtra("BLOCK_REASON", reason)
         }
         startActivity(overlayIntent)
     }

@@ -15,6 +15,7 @@ enum class ScreenState {
 data class MainUiState(
     val currentState: ScreenState = ScreenState.UNLOCKED_VAULT,
     val previousState: ScreenState = ScreenState.UNLOCKED_VAULT,
+    val interceptReason: String? = null,
     val isVowActive: Boolean = false,
     val isActiveVowMode: Boolean = false,
     val deactivationRequestTime: Long = 0L,

@@ -15,6 +15,7 @@ import com.avow.app.ui.MainViewModel
 
 class MainActivity : ComponentActivity() {
     private val triggerIntrusionState = mutableStateOf(false)
+    private val intrusionReasonState = mutableStateOf<String?>(null)
     private val preload15mVowState = mutableStateOf(false)
     private val isTemporaryLockoutState = mutableStateOf(false)
     private val mainViewModel: MainViewModel by viewModels()
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     viewModel = mainViewModel,
                     triggerIntrusion = triggerIntrusionState.value,
+                    intrusionReason = intrusionReasonState.value,
                     onIntrusionHandled = { triggerIntrusionState.value = false },
                     preload15mVow = preload15mVowState.value,
                     onPreloadHandled = { preload15mVowState.value = false },
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent != null) {
             if (intent.getBooleanExtra("TRIGGER_INTRUSION", false)) {
+                intrusionReasonState.value = intent.getStringExtra("BLOCK_REASON")
                 triggerIntrusionState.value = true
             }
             if (intent.getBooleanExtra("PRELOAD_15M_VOW", false)) {
