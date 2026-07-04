@@ -138,6 +138,7 @@ class MainViewModel @JvmOverloads constructor(
                 val quietHoursSpecificDomain = prefs[VowDataStore.QUIET_HOURS_SPECIFIC_DOMAIN] ?: ""
                 val vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
                 val vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
+                val vpnDomainBlockingEnabled = prefs[VowDataStore.VPN_DOMAIN_BLOCKING_ENABLED] ?: false
                 val temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
                 val doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 val doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
@@ -304,9 +305,15 @@ class MainViewModel @JvmOverloads constructor(
                         },
                         isDeviceOwner = isDeviceOwner,
                         deviceOwnerSupported = capabilities.supportsDeviceOwnerFeatures,
+                        vpnDomainBlockingEnabled = vpnDomainBlockingEnabled,
                         isOnboardingCompleted = isOnboardingCompleted,
                         isLoaded = true
                     )
+                }
+                // Re-establish the domain-filter VPN on launch if the user had it on (VPN consent
+                // persists; establish() no-ops/stops itself if consent was revoked).
+                if (vpnDomainBlockingEnabled) {
+                    com.avow.app.vpn.DomainVpnService.start(getApplication())
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to load DataStore settings", e)
@@ -448,6 +455,27 @@ class MainViewModel @JvmOverloads constructor(
 
     fun clearToast() {
         updateState { copy(inAppToastMessage = null) }
+    }
+
+    /** Persists the VPN toggle and starts the domain-filter service. Call only after VPN consent. */
+    fun enableVpnDomainBlocking() {
+        updateState { copy(vpnDomainBlockingEnabled = true) }
+        viewModelScope.launch {
+            try { vowDataStore.saveVpnDomainBlockingEnabled(true) } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to save VPN pref", e)
+            }
+        }
+        com.avow.app.vpn.DomainVpnService.start(getApplication())
+    }
+
+    fun disableVpnDomainBlocking() {
+        updateState { copy(vpnDomainBlockingEnabled = false) }
+        viewModelScope.launch {
+            try { vowDataStore.saveVpnDomainBlockingEnabled(false) } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to save VPN pref", e)
+            }
+        }
+        com.avow.app.vpn.DomainVpnService.stop(getApplication())
     }
 
     fun setScreenState(state: ScreenState) {

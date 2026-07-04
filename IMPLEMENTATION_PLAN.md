@@ -304,7 +304,13 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
   encouragement + timer from W5-T1). Keep the activity path as the full-build fallback if desired.
 - **Ties to:** onboarding permission request (W4-T5) and W5-T1 (the overlay content).
 
-### W4-T4 · VpnService domain blocking (lite)  `[U:9]` · L
+### W4-T4 · VpnService domain blocking (lite)  `[U:9]` · L · ✅ DONE (2026-07-03) — branch `feat/vpn-domain-blocking`
+> Local no-server DNS-filter VpnService (`DomainVpnService`) + tested packet core (`DnsPacket`, 7
+> tests). Settings toggle "BLOCK IN ALL BROWSERS" with VPN consent flow; blocks the global ban-domain
+> set in every browser. `VPN_TEST_PLAN.md` has the on-device test plan + edge cases. Both flavors
+> compile; lite tests 96/96. Needs extensive on-device testing (see test plan) before merge.
+
+### W4-T4 (original notes) · VpnService domain blocking (lite)  `[U:9]` · L
 - **Why:** UsageStats can't read URLs; accessibility URL-reading is exactly what Play scrutinizes.
   A **local, no-server** VpnService that filters DNS/drops banned domains is the compliant path for
   `banDomainSet` in lite (deployment plan §6). No traffic leaves the device.

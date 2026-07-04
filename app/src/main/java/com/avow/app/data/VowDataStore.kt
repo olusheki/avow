@@ -65,6 +65,8 @@ class VowDataStore(private val context: Context) {
         val DOOMSCROLL_COOLDOWN_MINUTES = intPreferencesKey("doomscroll_cooldown_minutes")
         val DOOMSCROLL_ALLOWANCE_MINUTES = intPreferencesKey("doomscroll_allowance_minutes")
         val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
+        // User preference (not security-signed): whether the browser-agnostic domain-filter VPN is on.
+        val VPN_DOMAIN_BLOCKING_ENABLED = booleanPreferencesKey("vpn_domain_blocking_enabled")
     }
  
     /**
@@ -474,6 +476,12 @@ class VowDataStore(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[TEMPORARY_LOCKOUT_END_TIME] = endTime
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
+    suspend fun saveVpnDomainBlockingEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[VPN_DOMAIN_BLOCKING_ENABLED] = enabled
         }
     }
 

@@ -40,7 +40,9 @@ None of this leaves your device. Uninstalling aVow deletes all of it.
   messages, or personal information.
 - It does **not** use the Accessibility Service to read screen content beyond the foreground app
   package name and the browser address bar needed to block sites.
-- It has **no** network permission in the Play build; no data is uploaded anywhere.
+- It uses the internet permission **only** so the optional "block in all browsers" domain filter can
+  forward your device's ordinary DNS lookups to a public resolver; aVow has no server and uploads
+  **none** of your data anywhere.
 - It does **not** share data with any third party, because it has no data to share.
 - It is **not** an accessibility tool and does not represent itself as one.
 

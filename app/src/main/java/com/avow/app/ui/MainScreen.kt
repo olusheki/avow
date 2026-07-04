@@ -232,6 +232,16 @@ fun MainScreen(
                         viewModel.showToast("Notification permission denied. Doomscroll warning will not appear.")
                     }
                 }
+                // VPN consent: launched when the user turns on browser-agnostic domain blocking.
+                val vpnConsentLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == android.app.Activity.RESULT_OK) {
+                        viewModel.enableVpnDomainBlocking()
+                    } else {
+                        viewModel.showToast("VPN permission is required to block domains in all browsers.")
+                    }
+                }
                 ConfigurationWorkspace(
                     secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
@@ -327,6 +337,21 @@ fun MainScreen(
                     isLocked = uiState.isVowActive,
                     isDeviceOwner = uiState.isDeviceOwner,
                     deviceOwnerSupported = uiState.deviceOwnerSupported,
+                    vpnEnabled = uiState.vpnDomainBlockingEnabled,
+                    onVpnToggle = { enable ->
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        if (enable) {
+                            // Enabling is stricter — always allowed.
+                            val prepare = android.net.VpnService.prepare(context)
+                            if (prepare != null) vpnConsentLauncher.launch(prepare)
+                            else viewModel.enableVpnDomainBlocking()
+                        } else if (uiState.isVowActive) {
+                            // Disabling is loosening — not allowed during a vow.
+                            viewModel.showToast("Error: Domain blocking can't be turned off while locked.")
+                        } else {
+                            viewModel.disableVpnDomainBlocking()
+                        }
+                    },
                     doomscrollShieldEnabled = uiState.doomscrollShieldEnabled,
                     onDoomscrollShieldToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
@@ -1410,6 +1435,8 @@ fun ConfigurationWorkspace(
     isLocked: Boolean,
     isDeviceOwner: Boolean,
     deviceOwnerSupported: Boolean,
+    vpnEnabled: Boolean,
+    onVpnToggle: (Boolean) -> Unit,
     doomscrollShieldEnabled: Boolean,
     onDoomscrollShieldToggle: () -> Unit,
     doomscrollAllTime: Boolean,
@@ -1502,6 +1529,47 @@ fun ConfigurationWorkspace(
                 canAdd = true,
                 canRemove = !isLocked
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            // Browser-agnostic domain blocking via a local, no-server DNS filter (VPN). Blocks the
+            // ban-domain set in every browser/app, not just Chrome/Samsung Internet.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onVpnToggle(!vpnEnabled) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "BLOCK IN ALL BROWSERS",
+                        color = if (vpnEnabled) MonospaceText else SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "On-device DNS filter (VPN). No traffic leaves your device.",
+                        color = SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Switch(
+                    checked = vpnEnabled,
+                    onCheckedChange = { onVpnToggle(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = LightGraphiteBg,
+                        checkedTrackColor = MonospaceText,
+                        checkedBorderColor = OutlineAccent,
+                        uncheckedThumbColor = OutlineAccent,
+                        uncheckedTrackColor = Color.Transparent,
+                        uncheckedBorderColor = OutlineAccent
+                    )
+                )
+            }
         }
 
         // 3. List of ENFORCEMENT RESTRICTIONS & Target profiles.
