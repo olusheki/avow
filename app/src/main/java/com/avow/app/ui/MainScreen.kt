@@ -341,9 +341,13 @@ fun MainScreen(
                     onVpnToggle = { enable ->
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                         if (enable) {
+                            // Enabling is stricter — always allowed.
                             val prepare = android.net.VpnService.prepare(context)
                             if (prepare != null) vpnConsentLauncher.launch(prepare)
                             else viewModel.enableVpnDomainBlocking()
+                        } else if (uiState.isVowActive) {
+                            // Disabling is loosening — not allowed during a vow.
+                            viewModel.showToast("Error: Domain blocking can't be turned off while locked.")
                         } else {
                             viewModel.disableVpnDomainBlocking()
                         }
