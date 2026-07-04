@@ -42,8 +42,16 @@ feature:
   User grants it explicitly via system settings; used on-device only.
 - **QUERY_ALL_PACKAGES:** **not requested.** Replaced by a scoped `<queries>` launcher-intent
   declaration (we only list launchable apps for the picker).
-- **Foreground service:** none in the lite build (blocking is via the accessibility service +
-  activity overlay), so no foreground-service-type disclosure is required. Re-check if that changes.
+- **Foreground service (VPN):** the optional "Block in all browsers" domain filter runs a
+  `specialUse` foreground service (`DomainVpnService`). Declare the `specialUse` subtype in the
+  Console: _"On-device DNS content filter that blocks the websites the user chose, in every browser.
+  No traffic leaves the device."_ It only runs when the user turns the toggle on and grants the VPN
+  consent dialog. If Google pushes back on `specialUse`, the feature can be shipped off by default or
+  removed from lite without affecting the rest of the app.
+- **VpnService / local VPN:** aVow runs a **local, no-server** VpnService. It routes only the
+  app-facing DNS address through the tunnel and either sinkholes blocked domains or forwards other
+  DNS queries to a public resolver over a protected socket. It does **not** proxy, inspect, or
+  transmit user traffic. Note this in the listing so reviewers don't mistake it for a remote VPN.
 - **POST_NOTIFICATIONS:** standard runtime permission; no declaration needed.
 - **RECEIVE_BOOT_COMPLETED:** to re-establish state after reboot.
 
