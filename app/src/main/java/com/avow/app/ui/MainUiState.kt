@@ -96,5 +96,6 @@ data class MainUiState(
     val isLoaded: Boolean = false,
     val isDeviceOwner: Boolean = false,
     val deviceOwnerSupported: Boolean = false,
+    val vpnDomainBlockingEnabled: Boolean = false,
     val isOnboardingCompleted: Boolean = false
 )
