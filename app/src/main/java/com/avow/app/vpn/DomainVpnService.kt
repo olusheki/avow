@@ -91,9 +91,15 @@ class DomainVpnService : VpnService() {
             }
             tunnel = fd
             running = true
-            startForeground(NOTIF_ID, buildNotification())
+            // startForeground can be denied when the service is (re)started from a not-yet-foreground
+            // context (Android 12+). Don't let that abort or crash the tunnel — run without it.
+            try {
+                startForeground(NOTIF_ID, buildNotification())
+            } catch (e: Throwable) {
+                Log.e(TAG, "startForeground denied; running the filter without a foreground notification", e)
+            }
             worker = Thread({ runLoop(fd) }, "aVow-dns-filter").also { it.start() }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to start VPN tunnel", e)
             teardown()
             stopSelf()
@@ -101,11 +107,24 @@ class DomainVpnService : VpnService() {
     }
 
     private fun runLoop(fd: ParcelFileDescriptor) {
-        val input = FileInputStream(fd.fileDescriptor)
-        val output = FileOutputStream(fd.fileDescriptor)
-        val upstream = DatagramSocket().also { protect(it) } // protect => bypasses our own tunnel
-        upstream.soTimeout = 4000
-        val upstreamAddr = InetSocketAddress(InetAddress.getByName(UPSTREAM_DNS), DnsPacket.DNS_PORT)
+        // NOTE: any uncaught throwable on this worker thread would kill the whole app process (and,
+        // because the toggle persists, crash-loop on every relaunch). So everything here is guarded
+        // and a hard failure self-heals by turning the feature off.
+        val input: FileInputStream
+        val output: FileOutputStream
+        val upstream: DatagramSocket
+        val upstreamAddr: InetSocketAddress
+        try {
+            input = FileInputStream(fd.fileDescriptor)
+            output = FileOutputStream(fd.fileDescriptor)
+            upstream = DatagramSocket().also { protect(it) } // protect => bypasses our own tunnel
+            upstream.soTimeout = 4000
+            upstreamAddr = InetSocketAddress(InetAddress.getByName(UPSTREAM_DNS), DnsPacket.DNS_PORT)
+        } catch (e: Throwable) {
+            Log.e(TAG, "VPN setup failed; disabling the domain filter to avoid a crash loop", e)
+            selfHealDisable()
+            return
+        }
         val buffer = ByteArray(32767)
         try {
             while (running) {
@@ -128,9 +147,22 @@ class DomainVpnService : VpnService() {
                     Log.e(TAG, "DNS handling error", e)
                 }
             }
+        } catch (e: Throwable) {
+            Log.e(TAG, "VPN worker crashed", e)
         } finally {
             try { upstream.close() } catch (_: Exception) {}
         }
+    }
+
+    /** Turns the filter off (pref + tunnel) after an unrecoverable failure so it can't crash-loop. */
+    private fun selfHealDisable() {
+        running = false
+        scope.launch {
+            try { VowDataStore(applicationContext).saveVpnDomainBlockingEnabled(false) } catch (_: Exception) {}
+        }
+        try { tunnel?.close() } catch (_: Exception) {}
+        tunnel = null
+        stopSelf()
     }
 
     /** Forwards a raw DNS query to the real upstream resolver and returns its response payload. */

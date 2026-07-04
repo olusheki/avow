@@ -54,6 +54,8 @@ feature:
   transmit user traffic. Note this in the listing so reviewers don't mistake it for a remote VPN.
 - **POST_NOTIFICATIONS:** standard runtime permission; no declaration needed.
 - **RECEIVE_BOOT_COMPLETED:** to re-establish state after reboot.
+- **INTERNET:** used only by the local domain-filter VPN to forward non-blocked DNS lookups to a
+  public resolver. No app/user content is transmitted; aVow has no backend.
 
 ## 4. Data Safety form
 
