@@ -70,7 +70,7 @@ feature:
 
 ## 5. Pre-submission checklist
 
-- [ ] Host `PRIVACY_POLICY.md` at a public URL; add a real contact email; put the URL in the listing.
+- [ ] Host `PRIVACY_POLICY.md` at a public URL and put the URL in the listing (contact email `avowtheapp@gmail.com` already set in the policy and in-app Settings).
 - [ ] Build & upload `assembleLiteRelease` (applicationId `com.avow.app`, "aVow").
 - [ ] Confirm the lite manifest has no device-admin surface and no QUERY_ALL_PACKAGES (both verified
       in the flavor-split / compliance branches).
