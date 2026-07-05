@@ -1,0 +1,41 @@
+<!--
+  aVow notification large icon: the mascot smiley on a graphite badge, in full color.
+  Used as NotificationCompat.setLargeIcon(), rendered big on the right of the notification,
+  so it keeps the in-app look — a light stroke on graphite, like SmileyFaceOutline on the app
+  background. Geometry mirrors the small icon / SmileyFaceOutline (200x200 viewport).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+    <!-- Graphite badge background -->
+    <path
+        android:fillColor="#FF5E5E5E"
+        android:pathData="M0,100 a100,100 0 1,0 200,0 a100,100 0 1,0 -200,0" />
+    <!-- Face boundary -->
+    <path
+        android:strokeColor="#FFF5F5F5"
+        android:strokeWidth="7"
+        android:fillColor="#00000000"
+        android:pathData="M20,100 a80,80 0 1,0 160,0 a80,80 0 1,0 -160,0" />
+    <!-- Left eye -->
+    <path
+        android:strokeColor="#FFF5F5F5"
+        android:strokeWidth="7"
+        android:fillColor="#00000000"
+        android:pathData="M65,82 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0" />
+    <!-- Right eye -->
+    <path
+        android:strokeColor="#FFF5F5F5"
+        android:strokeWidth="7"
+        android:fillColor="#00000000"
+        android:pathData="M115,82 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0" />
+    <!-- Smile -->
+    <path
+        android:strokeColor="#FFF5F5F5"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M60,130 C60,130 75,150 100,150 C125,150 140,130 140,130" />
+</vector>
