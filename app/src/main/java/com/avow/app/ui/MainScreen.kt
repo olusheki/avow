@@ -42,6 +42,10 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -1982,8 +1986,177 @@ fun ConfigurationWorkspace(
             )
         }
 
+        SettingsFooterSection()
+
         Spacer(modifier = Modifier.height(24.dp))
     }
+}
+
+/**
+ * Permissions status + support + about, shown at the bottom of Settings. Self-contained: reads the
+ * live permission state (refreshing whenever the user returns from a system settings screen) and
+ * offers one-tap actions to grant each and to contact the developer.
+ */
+@Composable
+fun SettingsFooterSection() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Re-check permissions whenever we return to this screen (e.g. after granting one in Settings).
+    var permRefresh by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permRefresh++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val accessibilityOn = remember(permRefresh) {
+        isAccessibilityServiceEnabled(context, com.avow.app.service.BlockerService::class.java)
+    }
+    val notificationsOn = remember(permRefresh) { settingsHasNotificationPermission(context) }
+    val usageOn = remember(permRefresh) { settingsHasUsageStatsPermission(context) }
+
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+        } catch (e: Exception) { "" }
+    }
+
+    Spacer(modifier = Modifier.height(28.dp))
+    SettingsSectionLabel("PERMISSIONS")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .sharpBorder(1.dp, OutlineAccent)
+            .background(MutedSurface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        PermissionStatusRow("ACCESSIBILITY", "Required to block apps and sites.", accessibilityOn) {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+        PermissionStatusRow("NOTIFICATIONS", "For doomscroll warnings.", notificationsOn) {
+            val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+        PermissionStatusRow("USAGE ACCESS", "For your screen-time figures.", usageOn) {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(28.dp))
+    SettingsSectionLabel("SUPPORT & ABOUT")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .sharpBorder(1.dp, OutlineAccent)
+            .background(MutedSurface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        SettingsLinkRow("Contact & feedback", "avowapp@gmail.com") {
+            try {
+                context.startActivity(
+                    Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:avowapp@gmail.com"))
+                        .putExtra(Intent.EXTRA_SUBJECT, "aVow feedback")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) { /* no email app */ }
+        }
+        SettingsLinkRow("Support aVow (donate)", "coming soon") { /* TODO: external donation URL */ }
+        Text(
+            text = "aVow v$versionName",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(
+        text = text,
+        color = SubtextGrey,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp,
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun PermissionStatusRow(title: String, detail: String, granted: Boolean, onEnable: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(detail, color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        if (granted) {
+            Text("GRANTED", color = SageGreen, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        } else {
+            SharpBorderButton(text = "[ ENABLE ]", onClick = onEnable, modifier = Modifier.width(96.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsLinkRow(title: String, value: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(title, color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(value, color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+    }
+}
+
+private fun settingsHasNotificationPermission(context: android.content.Context): Boolean {
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    } else true
+}
+
+private fun settingsHasUsageStatsPermission(context: android.content.Context): Boolean {
+    return try {
+        val appOps = context.getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+        val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                context.packageName
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                context.packageName
+            )
+        }
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    } catch (e: Exception) { false }
 }
 
 /**
