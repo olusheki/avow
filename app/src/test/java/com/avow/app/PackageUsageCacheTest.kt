@@ -36,7 +36,7 @@ class PackageUsageCacheTest {
 
         service = spyk(BlockerService(), recordPrivateCalls = true)
         every { service.packageName } returns "com.avow.app"
-        every { service["triggerBlackoutOverlay"]() } returns Unit
+        every { service["triggerBlackoutOverlay"](any<String>()) } returns Unit
 
         // Inject VowDataStore
         setPrivateField("vowDataStore", mockDataStore)
@@ -147,8 +147,8 @@ class PackageUsageCacheTest {
 
         // THEN: savePackageUsage must be called immediately due to limit breach
         coVerify(exactly = 1) { mockDataStore.savePackageUsage(any(), any()) }
-        // AND: triggerBlackoutOverlay is called
-        verify(exactly = 1) { service["triggerBlackoutOverlay"]() }
+        // AND: triggerBlackoutOverlay is called with the usage-limit reason
+        verify(exactly = 1) { service["triggerBlackoutOverlay"]("USAGE LIMIT") }
     }
 
     @Test

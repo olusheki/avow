@@ -358,7 +358,12 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
 
 ---
 
-## W5 · `feat/lockout-mascot-dashboard-ux`  *(depends on W1 for the live timer)*
+## W5 · `feat/ux-polish`  *(depends on W1 for the live timer)* · ✅ DONE (2026-07-03)
+> Branch `feat/ux-polish`, both flavors 96/96 green. All 9 tasks: rich lockout screen (reason +
+> coach encouragement + vow countdown, block reason threaded service→activity→state→overlay), smiley
+> on the doomscroll lockout, removed the config live-ticker, removed the logo tap-ripple, limit-mode
+> as a segmented button, unified the settings back button to `{ BACK }`, focus-insights latest-5 +
+> "see more", animated clock digits, shorter mascot copy (dropped greeting + the "// aVow" header).
 
 ### W5-T1 · Rich lockout screen: reason + encouragement + vow timer  `[U:4]` · L
 - **Goal:** When blocked, tell the user **what fired**, a **relevant** encouragement, and the

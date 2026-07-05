@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -17,6 +19,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.FlowRow
@@ -98,6 +101,7 @@ fun MainScreen(
     modifier: Modifier = Modifier,
     viewModel: MainViewModel,
     triggerIntrusion: Boolean = false,
+    intrusionReason: String? = null,
     onIntrusionHandled: () -> Unit = {},
     preload15mVow: Boolean = false,
     onPreloadHandled: () -> Unit = {},
@@ -138,6 +142,7 @@ fun MainScreen(
 
     LaunchedEffect(triggerIntrusion) {
         if (triggerIntrusion) {
+            viewModel.updateState { copy(interceptReason = intrusionReason) }
             viewModel.setScreenState(ScreenState.INTRUSION_INTERCEPT)
             onIntrusionHandled()
         }
@@ -483,6 +488,12 @@ fun MainScreen(
             }
             ScreenState.INTRUSION_INTERCEPT -> {
                 IntrusionInterceptOverlay(
+                    reason = uiState.interceptReason,
+                    isVowActive = uiState.isVowActive,
+                    days = uiState.days,
+                    hours = uiState.hours,
+                    minutes = uiState.minutes,
+                    seconds = uiState.seconds,
                     onExit = {
                         viewModel.setScreenState(uiState.previousState)
                     }
@@ -707,7 +718,7 @@ fun TemporaryLockoutOverlay(
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            StraightFaceOutline(
+            SmileyFaceOutline(
                 modifier = Modifier
                     .fillMaxWidth(0.35f)
                     .aspectRatio(1f)
@@ -924,23 +935,13 @@ fun MascotSpeechBubble(
             .sharpBorder(1.dp, OutlineAccent)
             .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Column {
-            Text(
-                text = "// aVow",
-                color = SubtextGrey,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 9.sp,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(bottom = 3.dp)
-            )
-            Text(
-                text = annotated.subSequence(0, visibleChars.coerceIn(0, annotated.length)),
-                color = MonospaceText,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                lineHeight = 16.sp
-            )
-        }
+        Text(
+            text = annotated.subSequence(0, visibleChars.coerceIn(0, annotated.length)),
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
     }
 }
 
@@ -1042,7 +1043,11 @@ fun VaultDashboard(
             SmileyFaceOutline(
                 modifier = Modifier
                     .size(39.dp)
-                    .clickable {
+                    // No ripple/highlight — the logo is a mark, not a button.
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
                         if (bubbleVisible) bubbleVisible = false else openBubble()
                     },
                 mouthOpen = mouthOpen
@@ -1267,14 +1272,23 @@ fun ClockDigitColumn(digit: String, label: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(60.dp)
     ) {
-        Text(
-            text = digit,
-            color = MonospaceText,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 38.sp,
-            fontWeight = FontWeight.Normal,
-            textAlign = TextAlign.Center
-        )
+        // Roll the digit up as it changes (new value slides in from below, old slides out above).
+        AnimatedContent(
+            targetState = digit,
+            transitionSpec = {
+                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+            },
+            label = "clockDigit"
+        ) { value ->
+            Text(
+                text = value,
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Normal,
+                textAlign = TextAlign.Center
+            )
+        }
         Text(
             text = label,
             color = SubtextGrey,
@@ -1488,14 +1502,10 @@ fun ConfigurationWorkspace(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End
         ) {
-            Text(
-                text = "< BACK",
-                color = SubtextGrey,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                modifier = Modifier
-                    .clickable { onBack() }
-                    .padding(8.dp)
+            SharpBorderButton(
+                text = "{ BACK }",
+                onClick = onBack,
+                modifier = Modifier.width(80.dp)
             )
         }
 
@@ -1835,36 +1845,6 @@ fun ConfigurationWorkspace(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val currentUptime = SystemClock.elapsedRealtime()
-                    if (temporaryLockoutEndTime > currentUptime) {
-                        val remainingSec = (temporaryLockoutEndTime - currentUptime) / 1000
-                        Text(
-                            text = "LOCKOUT: ${remainingSec / 60}m ${remainingSec % 60}s",
-                            color = Color(0xFFE57373),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    } else if (doomscrollAccumulatedMs > 0L) {
-                        Text(
-                            text = "LIVE TICKER: ${doomscrollAccumulatedMs / 1000}s",
-                            color = OutlineAccent,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    } else {
-                        Text(
-                            text = "LIVE TICKER: 0s",
-                            color = OutlineAccent,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
                 }
 
                 // App Picker / target apps list
@@ -2178,31 +2158,64 @@ fun DomainSetEditor(
  */
 @Composable
 fun IntrusionInterceptOverlay(
+    reason: String? = null,
+    isVowActive: Boolean = false,
+    days: Int = 0,
+    hours: Int = 0,
+    minutes: Int = 0,
+    seconds: Int = 0,
     onExit: () -> Unit
 ) {
-    var tapCount by remember { mutableStateOf(0) }
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(LightGraphiteBg)
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        onExit()
-                    },
-                    onTap = {
-                        tapCount++
-                    }
-                )
+                detectTapGestures(onDoubleTap = { onExit() })
             },
         contentAlignment = Alignment.Center
     ) {
-        SmileyFaceOutline(
-            modifier = Modifier
-                .fillMaxWidth(0.35f)
-                .aspectRatio(1f)
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            SmileyFaceOutline(
+                modifier = Modifier
+                    .fillMaxWidth(0.32f)
+                    .aspectRatio(1f)
+            )
+            Spacer(modifier = Modifier.height(28.dp))
+            // Why it fired (system voice).
+            Text(
+                text = "[ ${reason ?: "RESTRICTED"} ]",
+                color = LockedRed,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            // A relevant nudge (coach voice).
+            Text(
+                text = MascotMessages.interceptEncouragement(reason),
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                textAlign = TextAlign.Center
+            )
+            // The vow countdown, when a timed vow is running.
+            if (isVowActive && (days + hours + minutes + seconds) > 0) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "VOW ${String.format("%02d:%02d:%02d:%02d", days, hours, minutes, seconds)}",
+                    color = MonospaceText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 15.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
     }
 }
 
@@ -2338,21 +2351,40 @@ fun UsageLimitsConfigDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Limit Mode Toggle
+                // Limit Mode — segmented control (independent per-app vs collective total).
+                Text(
+                    text = "LIMIT MODE",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !isLocked) { localIsCollectiveLimit = !localIsCollectiveLimit }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .height(40.dp)
+                        .sharpBorder(1.dp, OutlineAccent)
                 ) {
-                    Text(
-                        text = "LIMIT MODE: [ ${if (localIsCollectiveLimit) "COLLECTIVE" else "INDEPENDENT"} ]",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    listOf("INDEPENDENT" to false, "COLLECTIVE" to true).forEach { (label, collective) ->
+                        val selected = localIsCollectiveLimit == collective
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .then(if (selected) Modifier.background(MonospaceText) else Modifier)
+                                .clickable(enabled = !isLocked) { localIsCollectiveLimit = collective },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (selected) LightGraphiteBg else MonospaceText,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -3759,7 +3791,8 @@ fun FocusHistoryWorkspace(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             
-            // Scrollable list of logs
+            // Scrollable list of logs — latest 5, with a "see more" to reveal the rest.
+            var showAllSessions by remember { mutableStateOf(false) }
             if (sessions.isEmpty()) {
                 Text(
                     text = "No history log items found.",
@@ -3768,12 +3801,25 @@ fun FocusHistoryWorkspace(
                     fontSize = 11.sp
                 )
             } else {
+                val visibleSessions = if (showAllSessions) sessions else sessions.take(5)
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    for (session in sessions) {
+                    for (session in visibleSessions) {
                         LogItem(session = session)
                     }
+                }
+                if (sessions.size > 5) {
+                    Text(
+                        text = if (showAllSessions) "[ SHOW LESS ]" else "[ SEE MORE (${sessions.size - 5}) ]",
+                        color = SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { showAllSessions = !showAllSessions }
+                            .padding(vertical = 12.dp)
+                    )
                 }
             }
         }
