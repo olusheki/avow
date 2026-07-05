@@ -515,11 +515,57 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
-     * Persists any selections made during onboarding, marks onboarding as completed,
-     * and transitions to the unlocked vault dashboard.
+     * Applies the one-tap "recommended settings" on the last onboarding slide: Passive mode, an
+     * enabled 10pm–7am scheduled block on the chosen apps/domains, and a 10 min/hour independent
+     * usage limit on those apps. Enforcement still needs a vow — the last slide sets that.
+     */
+    fun applyRecommendedSettings(selectedApps: Set<String>, domains: Set<String>) {
+        updateState {
+            val domainCsv = com.avow.app.util.DomainUtil.format(domains.toList())
+            val recommendedBlocks = if (vowBlocks.isNotEmpty()) {
+                vowBlocks.mapIndexed { i, block ->
+                    if (i == 0) block.copy(
+                        isEnabled = true,
+                        startHour = 22, startMin = 0, endHour = 7, endMin = 0,
+                        targetApps = block.targetApps + selectedApps,
+                        specificDomain = domainCsv
+                    ) else block
+                }
+            } else {
+                listOf(
+                    com.avow.app.model.VowBlock(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = "Quiet Hours", isEnabled = true,
+                        startHour = 22, startMin = 0, endHour = 7, endMin = 0,
+                        targetApps = selectedApps, specificDomain = domainCsv
+                    )
+                )
+            }
+            copy(
+                isActiveVowMode = false,
+                vowBlocks = recommendedBlocks,
+                usageLimitsUpdated = true,
+                allowedValue = "10",
+                allowedUnit = "min",
+                selectedInterval = "hour",
+                isCollectiveLimit = true,
+                targetAppSet = targetAppSet + selectedApps
+            )
+        }
+        saveConfigToDataStore()
+    }
+
+    /**
+     * Persists any selections made during onboarding, marks it completed, and lands on the vault —
+     * LOCKED if a first vow was just inflicted, otherwise UNLOCKED.
      */
     fun completeOnboarding() {
-        updateState { copy(isOnboardingCompleted = true, currentState = ScreenState.UNLOCKED_VAULT) }
+        updateState {
+            copy(
+                isOnboardingCompleted = true,
+                currentState = if (isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+            )
+        }
         // Persist the blocking selections (domains / apps / vow mode) chosen during onboarding.
         saveConfigToDataStore()
         viewModelScope.launch {

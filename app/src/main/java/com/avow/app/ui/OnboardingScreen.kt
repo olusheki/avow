@@ -15,6 +15,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -71,6 +72,11 @@ fun OnboardingFlow(
 
     // Apps chosen on the apps & domains slide; seeded into the default quiet-hours block on finish.
     var selectedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // Final slide: one-tap recommended config + the first-vow duration picker.
+    var recommendedApplied by remember { mutableStateOf(false) }
+    var vowHours by remember { mutableStateOf(1) }
+    var vowMinutes by remember { mutableStateOf(0) }
 
     // Live permission status — recomputed whenever the app returns from a settings screen.
     var permissionRefresh by remember { mutableStateOf(0) }
@@ -182,13 +188,18 @@ fun OnboardingFlow(
                     accessibilityEnabled = accessibilityEnabled,
                     onEnableAccessibility = { showAccessibilityDisclosure = true }
                 )
-                4 -> SlideVowMode(
-                    isActiveVowMode = uiState.isActiveVowMode,
-                    onModeChange = { active ->
-                        viewModel.updateState { copy(isActiveVowMode = active) }
-                    }
+                4 -> SlideFeatures()
+                5 -> SlideReady(
+                    recommendedApplied = recommendedApplied,
+                    onApplyRecommended = {
+                        viewModel.applyRecommendedSettings(selectedApps, uiState.banDomainSet)
+                        recommendedApplied = true
+                    },
+                    vowHours = vowHours,
+                    onVowHoursChange = { vowHours = it },
+                    vowMinutes = vowMinutes,
+                    onVowMinutesChange = { vowMinutes = it }
                 )
-                5 -> SlideReady()
             }
         }
 
@@ -236,30 +247,38 @@ fun OnboardingFlow(
                     modifier = Modifier.weight(if (slideIndex == 0) 1f else 2f)
                 )
             } else {
+                val vowSeconds = vowHours * 3600L + vowMinutes * 60L
                 WarmCtaButton(
-                    text = "ENTER THE VAULT",
+                    text = if (vowSeconds > 0) "INFLICT VOW & ENTER" else "ENTER THE VAULT",
                     enabled = true,
                     onClick = {
-                        // Seed the default quiet-hours block with the apps and primary domain
-                        // chosen during onboarding, so it's pre-populated on the dashboard.
-                        viewModel.updateState {
-                            val seededBlocks = if (vowBlocks.isNotEmpty()) {
-                                vowBlocks.mapIndexed { i, block ->
-                                    if (i == 0) {
-                                        block.copy(
-                                            targetApps = block.targetApps + selectedApps,
-                                            specificDomain = com.avow.app.util.DomainUtil.format(
-                                                com.avow.app.util.DomainUtil.parse(block.specificDomain) + banDomainSet.toList()
+                        // If the user didn't tap "recommended", still seed the default block with
+                        // the apps/domains they picked so the dashboard is pre-populated.
+                        if (!recommendedApplied) {
+                            viewModel.updateState {
+                                val seededBlocks = if (vowBlocks.isNotEmpty()) {
+                                    vowBlocks.mapIndexed { i, block ->
+                                        if (i == 0) {
+                                            block.copy(
+                                                targetApps = block.targetApps + selectedApps,
+                                                specificDomain = com.avow.app.util.DomainUtil.format(
+                                                    com.avow.app.util.DomainUtil.parse(block.specificDomain) + banDomainSet.toList()
+                                                )
                                             )
-                                        )
-                                    } else {
-                                        block
+                                        } else {
+                                            block
+                                        }
                                     }
+                                } else {
+                                    vowBlocks
                                 }
-                            } else {
-                                vowBlocks
+                                copy(vowBlocks = seededBlocks)
                             }
-                            copy(vowBlocks = seededBlocks)
+                        }
+                        // Inflict the first vow from the picker, so enforcement actually starts
+                        // (Passive rules do nothing without a running vow).
+                        if (vowSeconds > 0) {
+                            viewModel.addBindingTime(vowSeconds)
                         }
                         viewModel.completeOnboarding()
                     },
@@ -593,42 +612,48 @@ private fun SlidePermissions(
 }
 
 @Composable
-private fun SlideVowMode(
-    isActiveVowMode: Boolean,
-    onModeChange: (Boolean) -> Unit
-) {
+private fun SlideFeatures() {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(top = 24.dp)
     ) {
-        SlideTitle("How should it enforce?")
-        Text(
-            text = "Passive only holds while a binding vow is running — set a timer, and your quiet hours and usage limits stay locked until it ends. Active enforces your rules around the clock — no vow, no timer needed.",
-            color = SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            lineHeight = 18.sp
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Row(
+        SlideTitle("What aVow can do")
+        FeatureRow("BINDING VOWS", "Set a timer and your rules lock in — hard to undo on impulse until it ends. That's the point.")
+        FeatureRow("SCHEDULED BLOCKS", "Block chosen apps and sites during set hours — like 10pm–7am.")
+        FeatureRow("USAGE LIMITS", "Give yourself a daily or hourly time budget for your apps.")
+        FeatureRow("DOOMSCROLL SHIELD", "When you linger too long, it locks you out to cool off.")
+        FeatureRow("FOCUS INSIGHTS", "See your focus sessions and a zen score over time.")
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
-                .sharpBorder(1.dp, OutlineAccent)
-        ) {
-            ModeSegment("PASSIVE", selected = !isActiveVowMode, onClick = { onModeChange(false) }, modifier = Modifier.weight(1f))
-            ModeSegment("ACTIVE", selected = isActiveVowMode, onClick = { onModeChange(true) }, modifier = Modifier.weight(1f))
-        }
+                .height(1.dp)
+                .background(OutlineAccent)
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = if (isActiveVowMode) {
-                "ACTIVE — your quiet hours and usage limits block continuously, no vow required."
-            } else {
-                "PASSIVE — nothing blocks until you set a binding vow; then your rules hold for its duration."
-            },
-            color = if (isActiveVowMode) MonospaceText else SubtextGrey,
+            text = "PASSIVE vs ACTIVE",
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "PASSIVE (default): your rules only enforce while a vow timer is running. ACTIVE: your rules enforce on their own schedule with no vow needed. You can switch this anytime on the dashboard.",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+            text = "Set all of this yourself later — or tap \"Use recommended settings\" on the next screen for a sensible start.",
+            color = SubtextGrey,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
             lineHeight = 17.sp
@@ -637,16 +662,45 @@ private fun SlideVowMode(
 }
 
 @Composable
-private fun SlideReady() {
+private fun FeatureRow(title: String, detail: String) {
+    Column(modifier = Modifier.padding(bottom = 16.dp)) {
+        Text(
+            text = title,
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = detail,
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
+        )
+    }
+}
+
+@Composable
+private fun SlideReady(
+    recommendedApplied: Boolean,
+    onApplyRecommended: () -> Unit,
+    vowHours: Int,
+    onVowHoursChange: (Int) -> Unit,
+    vowMinutes: Int,
+    onVowMinutesChange: (Int) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(48.dp))
-        SmileyFaceOutline(modifier = Modifier.size(90.dp))
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        SmileyFaceOutline(modifier = Modifier.size(72.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         Text(
             text = "Ready to make a vow?",
             color = MonospaceText,
@@ -655,11 +709,71 @@ private fun SlideReady() {
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        TypewriterText(
-            text = "The vault is set. Enter to arm your rules — the lock holds. We'll be here the whole way.",
-            fontSize = 13.sp
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // One-tap recommended config: passive, 10pm–7am block on your apps, 10 min/hour limit.
+        if (recommendedApplied) {
+            Text(
+                text = "✓ RECOMMENDED SETTINGS APPLIED",
+                color = SageGreen,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+        } else {
+            WarmCtaButton(
+                text = "USE RECOMMENDED SETTINGS",
+                enabled = true,
+                onClick = onApplyRecommended,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = "Passive · 10pm–7am block · 10 min/hour combined across your apps.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "SET YOUR FIRST VOW",
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
         )
+        Text(
+            text = "Passive rules only enforce while a vow runs. Set a duration to start now.",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                WheelNumberPicker(range = 0..23, value = vowHours, onValueChange = onVowHoursChange)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("HH", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+            }
+            Text(":", color = MonospaceText, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 14.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                WheelNumberPicker(range = 0..59, value = vowMinutes, onValueChange = onVowMinutesChange)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("MM", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -679,8 +793,8 @@ private fun SlideTitle(text: String) {
 }
 
 /**
- * Reveals [text] one character at a time, pausing longer on sentence punctuation.
- * Re-types whenever the text changes (i.e. on slide entry).
+ * Reveals [text] one character at a time, pausing longer on sentence punctuation. Re-types whenever
+ * the text changes (i.e. on slide entry). Tap to reveal the whole thing immediately (skip).
  */
 @Composable
 private fun TypewriterText(
@@ -689,9 +803,11 @@ private fun TypewriterText(
     textAlign: TextAlign = TextAlign.Center
 ) {
     var visibleCount by remember(text) { mutableStateOf(0) }
+    var skip by remember(text) { mutableStateOf(false) }
     LaunchedEffect(text) {
         visibleCount = 0
         for (i in 1..text.length) {
+            if (skip) break
             visibleCount = i
             val c = text[i - 1]
             val pause = when (c) {
@@ -702,6 +818,7 @@ private fun TypewriterText(
             }
             delay(pause)
         }
+        if (skip) visibleCount = text.length
     }
     Text(
         text = text.take(visibleCount),
@@ -710,7 +827,15 @@ private fun TypewriterText(
         fontSize = fontSize,
         lineHeight = 19.sp,
         textAlign = textAlign,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                skip = true
+                visibleCount = text.length
+            }
     )
 }
 
@@ -839,31 +964,6 @@ private fun PermissionStatusCard(
                 modifier = Modifier.width(96.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun ModeSegment(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .then(if (selected) Modifier.background(MonospaceText) else Modifier)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = if (selected) LightGraphiteBg else MonospaceText,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
     }
 }
 
