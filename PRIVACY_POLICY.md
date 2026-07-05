@@ -56,8 +56,7 @@ If this policy changes, the updated version will be posted at this URL with a ne
 
 ## Contact
 
-Questions about this policy: **[INSERT A CONTACT EMAIL BEFORE PUBLISHING]**
+Questions about this policy: **avowtheapp@gmail.com**
 
 > Hosting note: publish this file at a public URL (e.g. GitHub Pages) and put that URL in the Play
-> Console listing. Replace the contact line above with a monitored email address — Google requires a
-> working contact.
+> Console listing.

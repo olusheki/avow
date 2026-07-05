@@ -1634,10 +1634,10 @@ fun SettingsFooterSection() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        SettingsLinkRow("Contact & feedback", "avowapp@gmail.com") {
+        SettingsLinkRow("Contact & feedback", "avowtheapp@gmail.com") {
             try {
                 context.startActivity(
-                    Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:avowapp@gmail.com"))
+                    Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:avowtheapp@gmail.com"))
                         .putExtra(Intent.EXTRA_SUBJECT, "aVow feedback")
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
