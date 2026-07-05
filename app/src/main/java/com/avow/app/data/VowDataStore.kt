@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import com.avow.app.util.VowValidator
+import com.avow.app.worker.ReminderInputs
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vow_settings")
 
@@ -67,6 +68,9 @@ class VowDataStore(private val context: Context) {
         val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
         // User preference (not security-signed): whether the browser-agnostic domain-filter VPN is on.
         val VPN_DOMAIN_BLOCKING_ENABLED = booleanPreferencesKey("vpn_domain_blocking_enabled")
+        // Idle-nudge bookkeeping (not security-signed): last app open + last reminder shown.
+        val LAST_APP_OPEN_MS = longPreferencesKey("last_app_open_ms")
+        val LAST_REMINDER_SHOWN_MS = longPreferencesKey("last_reminder_shown_ms")
     }
  
     /**
@@ -495,6 +499,31 @@ class VowDataStore(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[DOOMSCROLL_LAST_CLOSED_TIME] = lastClosedTime
         }
+    }
+
+    /** Records that the user opened the app now, resetting the idle-nudge clock. */
+    suspend fun saveLastAppOpen(nowMs: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_APP_OPEN_MS] = nowMs
+        }
+    }
+
+    /** Records that an idle "set a vow" reminder was shown, to rate-limit further nudges. */
+    suspend fun saveLastReminderShown(nowMs: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_REMINDER_SHOWN_MS] = nowMs
+        }
+    }
+
+    /** Snapshot of everything the idle-reminder worker needs to decide whether to nudge. */
+    suspend fun readReminderInputs(): ReminderInputs {
+        val prefs = context.dataStore.data.first()
+        return ReminderInputs(
+            isVowActive = prefs[IS_VOW_ACTIVE] ?: false,
+            onboardingCompleted = prefs[IS_ONBOARDING_COMPLETED] ?: false,
+            lastAppOpenMs = prefs[LAST_APP_OPEN_MS] ?: 0L,
+            lastReminderShownMs = prefs[LAST_REMINDER_SHOWN_MS] ?: 0L
+        )
     }
 
     suspend fun clearVowConfig() {

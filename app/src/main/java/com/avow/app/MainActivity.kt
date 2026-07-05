@@ -41,6 +41,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Reset the idle-nudge clock: the user is here, so they don't need a "set a vow" reminder.
+        mainViewModel.recordAppOpened()
+    }
+
     override fun onStop() {
         super.onStop()
         mainViewModel.saveConfigToDataStore()

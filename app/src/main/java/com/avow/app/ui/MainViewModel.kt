@@ -396,6 +396,16 @@ class MainViewModel @JvmOverloads constructor(
         _uiState.update(block)
     }
 
+    /** Stamps "now" as the last app-open time, resetting the idle-reminder clock. */
+    fun recordAppOpened() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                vowDataStore.saveLastAppOpen(System.currentTimeMillis())
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun saveConfigToDataStore() {
         val state = _uiState.value
         if (!state.isLoaded) return
