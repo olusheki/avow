@@ -120,6 +120,7 @@ fun MainScreen(
     var showQuietHoursDialog by remember { mutableStateOf(false) }
     var showUsageLimitsDialog by remember { mutableStateOf(false) }
     var showBindingVowDialog by remember { mutableStateOf(false) }
+    var showDoomscrollDialog by remember { mutableStateOf(false) }
 
     var initialDaysForDialog by remember { mutableStateOf("00") }
     var initialHoursForDialog by remember { mutableStateOf("00") }
@@ -222,10 +223,15 @@ fun MainScreen(
                     quietHoursActivated = uiState.vowBlocks.any { it.isEnabled },
                     usageLimitsActivated = uiState.usageLimitsUpdated,
                     bindingVowActivated = uiState.isVowActive,
+                    doomscrollActivated = uiState.doomscrollShieldEnabled,
+                    onDoomscrollClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showDoomscrollDialog = true
+                    },
                     deactivationRequestTime = uiState.deactivationRequestTime,
                     tickTrigger = uiState.seconds, // use seconds as tick trigger for UI updates
                     isActiveVowMode = uiState.isActiveVowMode,
-                    modalOpen = showQuietHoursDialog || showUsageLimitsDialog || showBindingVowDialog,
+                    modalOpen = showQuietHoursDialog || showUsageLimitsDialog || showBindingVowDialog || showDoomscrollDialog,
                     onVowModeChange = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         viewModel.updateState { copy(isActiveVowMode = it) }
@@ -234,13 +240,6 @@ fun MainScreen(
                 )
             }
             ScreenState.CONFIGURATION -> {
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { isGranted ->
-                    if (!isGranted) {
-                        viewModel.showToast("Notification permission denied. Doomscroll warning will not appear.")
-                    }
-                }
                 // VPN consent: launched when the user turns on browser-agnostic domain blocking.
                 val vpnConsentLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult()
@@ -361,128 +360,8 @@ fun MainScreen(
                             viewModel.disableVpnDomainBlocking()
                         }
                     },
-                    doomscrollShieldEnabled = uiState.doomscrollShieldEnabled,
-                    onDoomscrollShieldToggle = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        // Enabling the shield is stricter (allowed while locked); disabling it is not.
-                        if (uiState.isVowActive && uiState.doomscrollShieldEnabled) {
-                            viewModel.showToast("Error: The Doomscroll Shield can't be turned off while locked.")
-                        } else {
-                            val enabling = !uiState.doomscrollShieldEnabled
-                            viewModel.updateState { copy(doomscrollShieldEnabled = enabling) }
-                            viewModel.saveConfigToDataStore()
-                            if (enabling && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }
-                    },
-                    doomscrollAllTime = uiState.doomscrollAllTime,
-                    onDoomscrollAllTimeToggle = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        val enabling = !uiState.doomscrollAllTime
-                        // All-day is the strictest window: turning it on is allowed while locked,
-                        // turning it off (back to a time range) is a loosening and is not.
-                        if (uiState.isVowActive && !enabling) {
-                            viewModel.showToast("Error: All-day restriction can't be turned off while locked.")
-                        } else {
-                            viewModel.updateState { copy(doomscrollAllTime = enabling) }
-                            viewModel.saveConfigToDataStore()
-                        }
-                    },
-                    doomscrollStartHour = uiState.doomscrollStartHour,
-                    doomscrollStartMin = uiState.doomscrollStartMin,
-                    doomscrollEndHour = uiState.doomscrollEndHour,
-                    doomscrollEndMin = uiState.doomscrollEndMin,
-                    onDoomscrollTimeUpdate = { sh, sm, eh, em ->
-                        if (uiState.isVowActive) {
-                            // Allow only a window that still covers the locked-in one (widen, not narrow).
-                            val stricter = com.avow.app.util.VowValidator.isDoomscrollWindowStricter(
-                                uiState.frozenDoomscrollStartHour, uiState.frozenDoomscrollStartMin,
-                                uiState.frozenDoomscrollEndHour, uiState.frozenDoomscrollEndMin,
-                                sh, sm, eh, em
-                            )
-                            if (!stricter) {
-                                viewModel.showToast("Error: The restriction window can only be widened while locked.")
-                            } else {
-                                viewModel.updateState {
-                                    copy(
-                                        doomscrollStartHour = sh, doomscrollStartMin = sm,
-                                        doomscrollEndHour = eh, doomscrollEndMin = em,
-                                        frozenDoomscrollStartHour = sh, frozenDoomscrollStartMin = sm,
-                                        frozenDoomscrollEndHour = eh, frozenDoomscrollEndMin = em
-                                    )
-                                }
-                                viewModel.saveConfigToDataStore()
-                            }
-                        } else {
-                            viewModel.updateState {
-                                copy(
-                                    doomscrollStartHour = sh,
-                                    doomscrollStartMin = sm,
-                                    doomscrollEndHour = eh,
-                                    doomscrollEndMin = em
-                                )
-                            }
-                            viewModel.saveConfigToDataStore()
-                        }
-                    },
-                    doomscrollTargetApps = uiState.doomscrollTargetAppSet,
-                    onDoomscrollTargetAppsUpdate = { apps ->
-                        if (uiState.isVowActive) {
-                            val removedApps = uiState.doomscrollTargetAppSet - apps
-                            if (removedApps.isNotEmpty()) {
-                                viewModel.showToast("Error: Target applications cannot be removed while locked.")
-                            } else {
-                                viewModel.updateState { copy(doomscrollTargetAppSet = apps, frozenDoomscrollTargetAppSet = apps) }
-                                viewModel.saveConfigToDataStore()
-                            }
-                        } else {
-                            viewModel.updateState { copy(doomscrollTargetAppSet = apps) }
-                            viewModel.saveConfigToDataStore()
-                        }
-                    },
-                    doomscrollCooldownMinutes = uiState.doomscrollCooldownMinutes,
-                    onDoomscrollCooldownMinutesUpdate = { cooldown ->
-                        if (uiState.isVowActive) {
-                            if (cooldown < uiState.frozenDoomscrollCooldownMinutes) {
-                                viewModel.showToast("Error: Cooldown minutes can only be made longer (stricter) while locked.")
-                            } else {
-                                viewModel.updateState {
-                                    copy(
-                                        doomscrollCooldownMinutes = cooldown,
-                                        frozenDoomscrollCooldownMinutes = cooldown
-                                    )
-                                }
-                                viewModel.saveConfigToDataStore()
-                            }
-                        } else {
-                            viewModel.updateState { copy(doomscrollCooldownMinutes = cooldown) }
-                            viewModel.saveConfigToDataStore()
-                        }
-                    },
-                    doomscrollAllowanceMinutes = uiState.doomscrollAllowanceMinutes,
-                    doomscrollAccumulatedMs = uiState.doomscrollAccumulatedMs,
-                    onDoomscrollAllowanceMinutesUpdate = { allowance ->
-                        if (uiState.isVowActive) {
-                            if (allowance > uiState.frozenDoomscrollAllowanceMinutes) {
-                                viewModel.showToast("Error: Allowance minutes can only be made shorter (stricter) while locked.")
-                            } else {
-                                viewModel.updateState {
-                                    copy(
-                                        doomscrollAllowanceMinutes = allowance,
-                                        frozenDoomscrollAllowanceMinutes = allowance
-                                    )
-                                }
-                                viewModel.saveConfigToDataStore()
-                            }
-                        } else {
-                            viewModel.updateState { copy(doomscrollAllowanceMinutes = allowance) }
-                            viewModel.saveConfigToDataStore()
-                        }
-                    },
                     installedApps = uiState.installedApps,
                     deactivationRequestTime = uiState.deactivationRequestTime,
-                    temporaryLockoutEndTime = uiState.temporaryLockoutEndTime,
                     onDeactivateClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         viewModel.requestDeactivation()
@@ -630,6 +509,14 @@ fun MainScreen(
                     showBindingVowDialog = false
                     initialDaysForDialog = "00"; initialHoursForDialog = "00"; initialMinutesForDialog = "00"; initialSecondsForDialog = "00"
                 }
+            )
+        }
+
+        if (showDoomscrollDialog) {
+            DoomscrollConfigDialog(
+                viewModel = viewModel,
+                installedApps = uiState.installedApps,
+                onDismiss = { showDoomscrollDialog = false }
             )
         }
 
@@ -970,6 +857,8 @@ fun VaultDashboard(
     quietHoursActivated: Boolean,
     usageLimitsActivated: Boolean,
     bindingVowActivated: Boolean,
+    doomscrollActivated: Boolean = false,
+    onDoomscrollClick: () -> Unit = {},
     deactivationRequestTime: Long = 0L,
     tickTrigger: Int = 0,
     isActiveVowMode: Boolean = false,
@@ -1239,6 +1128,11 @@ fun VaultDashboard(
                 onClick = onSetUsageLimitsClick
             )
             DashboardPanelButton(
+                title = "DOOMSCROLL SHIELD",
+                isActivated = doomscrollActivated,
+                onClick = onDoomscrollClick
+            )
+            DashboardPanelButton(
                 title = panelThreeTitle,
                 isActivated = bindingVowActivated,
                 onClick = onPanelThreeClick
@@ -1455,23 +1349,6 @@ fun ConfigurationWorkspace(
     deviceOwnerSupported: Boolean,
     vpnEnabled: Boolean,
     onVpnToggle: (Boolean) -> Unit,
-    doomscrollShieldEnabled: Boolean,
-    onDoomscrollShieldToggle: () -> Unit,
-    doomscrollAllTime: Boolean,
-    onDoomscrollAllTimeToggle: () -> Unit,
-    doomscrollStartHour: Int,
-    doomscrollStartMin: Int,
-    doomscrollEndHour: Int,
-    doomscrollEndMin: Int,
-    onDoomscrollTimeUpdate: (Int, Int, Int, Int) -> Unit,
-    doomscrollTargetApps: Set<String>,
-    onDoomscrollTargetAppsUpdate: (Set<String>) -> Unit,
-    doomscrollCooldownMinutes: Int,
-    onDoomscrollCooldownMinutesUpdate: (Int) -> Unit,
-    doomscrollAllowanceMinutes: Int,
-    doomscrollAccumulatedMs: Long = 0L,
-    temporaryLockoutEndTime: Long = 0L,
-    onDoomscrollAllowanceMinutesUpdate: (Int) -> Unit,
     installedApps: List<Pair<String, String>>,
     deactivationRequestTime: Long = 0L,
     onDeactivateClick: () -> Unit = {},
@@ -1489,7 +1366,6 @@ fun ConfigurationWorkspace(
     )
 
     val scrollState = rememberScrollState()
-    var doomscrollTimePickerTarget by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1644,296 +1520,6 @@ fun ConfigurationWorkspace(
             }
         }
 
-        // --- DOOMSCROLL SHIELD SECTION ---
-        Spacer(modifier = Modifier.height(28.dp))
-        Text(
-            text = "DOOMSCROLL BLOCK CONFIG",
-            color = SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 8.dp)
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .sharpBorder(1.dp, OutlineAccent)
-                .background(MutedSurface)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Enable Toggle Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onDoomscrollShieldToggle() }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "ENABLE",
-                    color = if (doomscrollShieldEnabled) MonospaceText else SubtextGrey,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Switch(
-                    checked = doomscrollShieldEnabled,
-                    onCheckedChange = { onDoomscrollShieldToggle() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = LightGraphiteBg,
-                        checkedTrackColor = MonospaceText,
-                        checkedBorderColor = OutlineAccent,
-                        uncheckedThumbColor = OutlineAccent,
-                        uncheckedTrackColor = Color.Transparent,
-                        uncheckedBorderColor = OutlineAccent
-                    )
-                )
-            }
-
-            if (doomscrollShieldEnabled) {
-                // All Time Toggle Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onDoomscrollAllTimeToggle() }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "RESTRICT ALL DAY",
-                        color = if (doomscrollAllTime) MonospaceText else SubtextGrey,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Switch(
-                        checked = doomscrollAllTime,
-                        onCheckedChange = { onDoomscrollAllTimeToggle() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = LightGraphiteBg,
-                            checkedTrackColor = MonospaceText,
-                            checkedBorderColor = OutlineAccent,
-                            uncheckedThumbColor = OutlineAccent,
-                            uncheckedTrackColor = Color.Transparent,
-                            uncheckedBorderColor = OutlineAccent
-                        )
-                    )
-                }
-
-                if (!doomscrollAllTime) {
-                    // Time Interval Selection (Start / End times)
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Start Time Display Box
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("START TIME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .height(30.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface)
-                                    .clickable(enabled = !isLocked) {
-                                        doomscrollTimePickerTarget = "START"
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = formatTimeAmPm(doomscrollStartHour, doomscrollStartMin),
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // End Time Display Box
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("END TIME:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .height(30.dp)
-                                    .border(1.dp, OutlineAccent)
-                                    .background(MutedSurface)
-                                    .clickable(enabled = !isLocked) {
-                                        doomscrollTimePickerTarget = "END"
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = formatTimeAmPm(doomscrollEndHour, doomscrollEndMin),
-                                    color = if (!isLocked) MonospaceText else SubtextGrey,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Cooldown Minutes Slider (5-minute stops, max 60 minutes)
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "LOCKOUT COOLDOWN: $doomscrollCooldownMinutes Min",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Slider(
-                        value = doomscrollCooldownMinutes.toFloat().coerceIn(5f, 60f),
-                        onValueChange = { newValue ->
-                            val rounded = (newValue.roundToInt() / 5) * 5
-                            onDoomscrollCooldownMinutesUpdate(rounded.coerceIn(5, 60))
-                        },
-                        valueRange = 5f..60f,
-                        steps = 10,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MonospaceText,
-                            activeTrackColor = MonospaceText,
-                            inactiveTrackColor = OutlineAccent,
-                            activeTickColor = Color.Transparent,
-                            inactiveTickColor = Color.Transparent
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Allowance Minutes Slider (5-minute stops, max 60 minutes)
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "SCROLL ALLOWANCE: $doomscrollAllowanceMinutes Min",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Slider(
-                        value = doomscrollAllowanceMinutes.toFloat().coerceIn(5f, 60f),
-                        onValueChange = { newValue ->
-                            val rounded = (newValue.roundToInt() / 5) * 5
-                            onDoomscrollAllowanceMinutesUpdate(rounded.coerceIn(5, 60))
-                        },
-                        valueRange = 5f..60f,
-                        steps = 10,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MonospaceText,
-                            activeTrackColor = MonospaceText,
-                            inactiveTrackColor = OutlineAccent,
-                            activeTickColor = Color.Transparent,
-                            inactiveTickColor = Color.Transparent
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // App Picker / target apps list
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "TARGET APPS",
-                        color = SubtextGrey,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    var appDropdownExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                                .border(1.dp, OutlineAccent)
-                                .background(DarkerSurfaceColor)
-                                .clickable { appDropdownExpanded = true }
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "+ ADD TARGET APP",
-                                color = MonospaceText,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "v",
-                                color = SubtextGrey,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = appDropdownExpanded,
-                            onDismissRequest = { appDropdownExpanded = false },
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .heightIn(max = 250.dp)
-                                .background(MutedSurface)
-                                .border(1.dp, OutlineAccent)
-                        ) {
-                            installedApps.forEach { (pkg, label) ->
-                                DropdownMenuItem(
-                                    text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
-                                    onClick = {
-                                        if (!doomscrollTargetApps.contains(pkg)) {
-                                            onDoomscrollTargetAppsUpdate(doomscrollTargetApps + pkg)
-                                        }
-                                        appDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // Display targeted apps as chips
-                    if (doomscrollTargetApps.isNotEmpty()) {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            doomscrollTargetApps.forEach { pkg ->
-                                val label = installedApps.find { it.first == pkg }?.second ?: pkg
-                                InputChip(
-                                    text = label,
-                                    onRemove = { onDoomscrollTargetAppsUpdate(doomscrollTargetApps - pkg) },
-                                    enabled = true
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // The deactivate-device-owner control only makes sense in the full build.
         if (!isLocked && deviceOwnerSupported) {
@@ -1968,23 +1554,6 @@ fun ConfigurationWorkspace(
             }
         }
 
-        doomscrollTimePickerTarget?.let { target ->
-            val initialHour = if (target == "START") doomscrollStartHour else doomscrollEndHour
-            val initialMinute = if (target == "START") doomscrollStartMin else doomscrollEndMin
-            DialTimePickerDialog(
-                initialHour = initialHour,
-                initialMinute = initialMinute,
-                onDismiss = { doomscrollTimePickerTarget = null },
-                onConfirm = { hour, minute ->
-                    if (target == "START") {
-                        onDoomscrollTimeUpdate(hour, minute, doomscrollEndHour, doomscrollEndMin)
-                    } else {
-                        onDoomscrollTimeUpdate(doomscrollStartHour, doomscrollStartMin, hour, minute)
-                    }
-                    doomscrollTimePickerTarget = null
-                }
-            )
-        }
 
         SettingsFooterSection()
 
@@ -2882,6 +2451,250 @@ fun UsageLimitsConfigDialog(
     }
 }
 
+
+/**
+ * Doomscroll Shield configuration, opened from its dashboard panel. Self-contained: reads and writes
+ * state via [viewModel] directly (changes apply live), so no params are threaded. Enforces the same
+ * stricter-only rules as before while a vow is locked.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DoomscrollConfigDialog(
+    viewModel: MainViewModel,
+    installedApps: List<Pair<String, String>>,
+    onDismiss: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val isLocked = uiState.isVowActive
+    var doomscrollTimePickerTarget by remember { mutableStateOf<String?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+
+    fun toggleShield() {
+        if (isLocked && uiState.doomscrollShieldEnabled) {
+            viewModel.showToast("Error: The Doomscroll Shield can't be turned off while locked.")
+        } else {
+            val enabling = !uiState.doomscrollShieldEnabled
+            viewModel.updateState { copy(doomscrollShieldEnabled = enabling) }
+            viewModel.saveConfigToDataStore()
+            if (enabling && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+    fun toggleAllTime() {
+        val enabling = !uiState.doomscrollAllTime
+        if (isLocked && !enabling) {
+            viewModel.showToast("Error: All-day restriction can't be turned off while locked.")
+        } else {
+            viewModel.updateState { copy(doomscrollAllTime = enabling) }
+            viewModel.saveConfigToDataStore()
+        }
+    }
+    fun updateTime(sh: Int, sm: Int, eh: Int, em: Int) {
+        if (isLocked) {
+            val stricter = com.avow.app.util.VowValidator.isDoomscrollWindowStricter(
+                uiState.frozenDoomscrollStartHour, uiState.frozenDoomscrollStartMin,
+                uiState.frozenDoomscrollEndHour, uiState.frozenDoomscrollEndMin, sh, sm, eh, em
+            )
+            if (!stricter) {
+                viewModel.showToast("Error: The restriction window can only be widened while locked.")
+            } else {
+                viewModel.updateState {
+                    copy(
+                        doomscrollStartHour = sh, doomscrollStartMin = sm,
+                        doomscrollEndHour = eh, doomscrollEndMin = em,
+                        frozenDoomscrollStartHour = sh, frozenDoomscrollStartMin = sm,
+                        frozenDoomscrollEndHour = eh, frozenDoomscrollEndMin = em
+                    )
+                }
+                viewModel.saveConfigToDataStore()
+            }
+        } else {
+            viewModel.updateState {
+                copy(doomscrollStartHour = sh, doomscrollStartMin = sm, doomscrollEndHour = eh, doomscrollEndMin = em)
+            }
+            viewModel.saveConfigToDataStore()
+        }
+    }
+    fun updateTargets(apps: Set<String>) {
+        if (isLocked && (uiState.doomscrollTargetAppSet - apps).isNotEmpty()) {
+            viewModel.showToast("Error: Target applications cannot be removed while locked.")
+        } else {
+            viewModel.updateState {
+                copy(doomscrollTargetAppSet = apps, frozenDoomscrollTargetAppSet = if (isLocked) apps else frozenDoomscrollTargetAppSet)
+            }
+            viewModel.saveConfigToDataStore()
+        }
+    }
+    fun updateCooldown(cooldown: Int) {
+        if (isLocked && cooldown < uiState.frozenDoomscrollCooldownMinutes) {
+            viewModel.showToast("Error: Cooldown minutes can only be made longer (stricter) while locked.")
+        } else {
+            viewModel.updateState {
+                copy(doomscrollCooldownMinutes = cooldown, frozenDoomscrollCooldownMinutes = if (isLocked) cooldown else frozenDoomscrollCooldownMinutes)
+            }
+            viewModel.saveConfigToDataStore()
+        }
+    }
+    fun updateAllowance(allowance: Int) {
+        if (isLocked && allowance > uiState.frozenDoomscrollAllowanceMinutes) {
+            viewModel.showToast("Error: Allowance minutes can only be made shorter (stricter) while locked.")
+        } else {
+            viewModel.updateState {
+                copy(doomscrollAllowanceMinutes = allowance, frozenDoomscrollAllowanceMinutes = if (isLocked) allowance else frozenDoomscrollAllowanceMinutes)
+            }
+            viewModel.saveConfigToDataStore()
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LightGraphiteBg)
+                .border(1.dp, OutlineAccent)
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("CONFIG: DOOMSCROLL SHIELD", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("X", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onDismiss() }.padding(4.dp))
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(OutlineAccent))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Enable Toggle Row
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { toggleShield() }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("ENABLE", color = if (uiState.doomscrollShieldEnabled) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Switch(
+                        checked = uiState.doomscrollShieldEnabled,
+                        onCheckedChange = { toggleShield() },
+                        colors = SwitchDefaults.colors(checkedThumbColor = LightGraphiteBg, checkedTrackColor = MonospaceText, checkedBorderColor = OutlineAccent, uncheckedThumbColor = OutlineAccent, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = OutlineAccent)
+                    )
+                }
+
+                if (uiState.doomscrollShieldEnabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { toggleAllTime() }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("RESTRICT ALL DAY", color = if (uiState.doomscrollAllTime) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Switch(
+                            checked = uiState.doomscrollAllTime,
+                            onCheckedChange = { toggleAllTime() },
+                            colors = SwitchDefaults.colors(checkedThumbColor = LightGraphiteBg, checkedTrackColor = MonospaceText, checkedBorderColor = OutlineAccent, uncheckedThumbColor = OutlineAccent, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = OutlineAccent)
+                        )
+                    }
+
+                    if (!uiState.doomscrollAllTime) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("START TIME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = !isLocked) { doomscrollTimePickerTarget = "START" },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(formatTimeAmPm(uiState.doomscrollStartHour, uiState.doomscrollStartMin), color = if (!isLocked) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("END TIME:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = !isLocked) { doomscrollTimePickerTarget = "END" },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(formatTimeAmPm(uiState.doomscrollEndHour, uiState.doomscrollEndMin), color = if (!isLocked) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("LOCKOUT COOLDOWN: ${uiState.doomscrollCooldownMinutes} Min", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Slider(
+                            value = uiState.doomscrollCooldownMinutes.toFloat().coerceIn(5f, 60f),
+                            onValueChange = { updateCooldown(((it.roundToInt() / 5) * 5).coerceIn(5, 60)) },
+                            valueRange = 5f..60f, steps = 10,
+                            colors = SliderDefaults.colors(thumbColor = MonospaceText, activeTrackColor = MonospaceText, inactiveTrackColor = OutlineAccent, activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("SCROLL ALLOWANCE: ${uiState.doomscrollAllowanceMinutes} Min", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Slider(
+                            value = uiState.doomscrollAllowanceMinutes.toFloat().coerceIn(5f, 60f),
+                            onValueChange = { updateAllowance(((it.roundToInt() / 5) * 5).coerceIn(5, 60)) },
+                            valueRange = 5f..60f, steps = 10,
+                            colors = SliderDefaults.colors(thumbColor = MonospaceText, activeTrackColor = MonospaceText, inactiveTrackColor = OutlineAccent, activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("TARGET APPS", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        var appDropdownExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(40.dp).border(1.dp, OutlineAccent).background(DarkerSurfaceColor).clickable { appDropdownExpanded = true }.padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("+ ADD TARGET APP", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                Text("v", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            }
+                            DropdownMenu(
+                                expanded = appDropdownExpanded, onDismissRequest = { appDropdownExpanded = false },
+                                modifier = Modifier.fillMaxWidth(0.85f).heightIn(max = 250.dp).background(MutedSurface).border(1.dp, OutlineAccent)
+                            ) {
+                                installedApps.forEach { (pkg, label) ->
+                                    DropdownMenuItem(
+                                        text = { Text("$label ($pkg)", fontFamily = FontFamily.Monospace, color = MonospaceText) },
+                                        onClick = {
+                                            if (!uiState.doomscrollTargetAppSet.contains(pkg)) updateTargets(uiState.doomscrollTargetAppSet + pkg)
+                                            appDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        if (uiState.doomscrollTargetAppSet.isNotEmpty()) {
+                            FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                uiState.doomscrollTargetAppSet.forEach { pkg ->
+                                    val label = installedApps.find { it.first == pkg }?.second ?: pkg
+                                    InputChip(text = label, onRemove = { updateTargets(uiState.doomscrollTargetAppSet - pkg) }, enabled = true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        doomscrollTimePickerTarget?.let { target ->
+            val initialHour = if (target == "START") uiState.doomscrollStartHour else uiState.doomscrollEndHour
+            val initialMinute = if (target == "START") uiState.doomscrollStartMin else uiState.doomscrollEndMin
+            DialTimePickerDialog(
+                initialHour = initialHour,
+                initialMinute = initialMinute,
+                onDismiss = { doomscrollTimePickerTarget = null },
+                onConfirm = { hour, minute ->
+                    if (target == "START") updateTime(hour, minute, uiState.doomscrollEndHour, uiState.doomscrollEndMin)
+                    else updateTime(uiState.doomscrollStartHour, uiState.doomscrollStartMin, hour, minute)
+                    doomscrollTimePickerTarget = null
+                }
+            )
+        }
+    }
+}
 
 /**
  * Custom wrapper for Material 3 TimePicker Dialog.
