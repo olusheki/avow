@@ -7,8 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -19,8 +17,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.avow.app.MainActivity
-import com.avow.app.R
 import com.avow.app.data.VowDataStore
+import com.avow.app.util.NotificationStyle
 import java.util.concurrent.TimeUnit
 
 /**
@@ -76,10 +74,7 @@ class ReminderWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)          // mascot silhouette in status bar + header
-            .setColor(ACCENT_SAGE)                              // sage-tints the small icon + app name
-            .setLargeIcon(mascotLargeIcon())                    // full-color smiley on the right
+        val builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
             .setContentTitle("Been a while.")
             .setContentText("No vow is holding the line right now. Set one and get back on track.")
             .setStyle(
@@ -90,7 +85,7 @@ class ReminderWorker(
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .build()
+        val notification = NotificationStyle.applyBranding(builder, ctx).build()
 
         try {
             NotificationManagerCompat.from(ctx).notify(NOTIFICATION_ID, notification)
@@ -99,21 +94,8 @@ class ReminderWorker(
         }
     }
 
-    /** Rasterizes the full-color mascot vector into a bitmap for setLargeIcon(). */
-    private fun mascotLargeIcon(): Bitmap {
-        val size = applicationContext.resources.displayMetrics.density.let { (64 * it).toInt() }
-            .coerceAtLeast(96)
-        val drawable = ContextCompat.getDrawable(applicationContext, R.drawable.ic_avow_mascot)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        drawable?.setBounds(0, 0, size, size)
-        drawable?.draw(canvas)
-        return bitmap
-    }
-
     companion object {
         private const val CHANNEL_ID = "vow_reminders"
-        private const val ACCENT_SAGE = 0xFF8FB88C.toInt()     // SageGreen — the coach accent
         private const val NOTIFICATION_ID = 4201
         private const val UNIQUE_WORK_NAME = "idle_vow_reminder"
 

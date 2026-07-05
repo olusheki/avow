@@ -671,12 +671,12 @@ class BlockerService : AccessibilityService() {
         )
 
         val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Doomscroll Warning")
             .setContentText("You've spent a while in here. Tap to bind a 15-minute vow.")
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+        com.avow.app.util.NotificationStyle.applyBranding(builder, this)
 
         notificationManager.notify(2002, builder.build())
     }
