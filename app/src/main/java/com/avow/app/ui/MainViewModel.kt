@@ -548,7 +548,7 @@ class MainViewModel @JvmOverloads constructor(
                 allowedValue = "10",
                 allowedUnit = "min",
                 selectedInterval = "hour",
-                isCollectiveLimit = false,
+                isCollectiveLimit = true,
                 targetAppSet = targetAppSet + selectedApps
             )
         }

@@ -44,7 +44,7 @@ import com.avow.app.service.BlockerService
 import com.avow.app.ui.theme.*
 import kotlinx.coroutines.delay
 
-private const val ONBOARDING_SLIDE_COUNT = 7
+private const val ONBOARDING_SLIDE_COUNT = 6
 // Average daily *social media* use (not total screen time), ~2h 20m.
 private const val EVERYONE_ELSE_HOURS = 2.3f
 
@@ -188,14 +188,8 @@ fun OnboardingFlow(
                     accessibilityEnabled = accessibilityEnabled,
                     onEnableAccessibility = { showAccessibilityDisclosure = true }
                 )
-                4 -> SlideVowMode(
-                    isActiveVowMode = uiState.isActiveVowMode,
-                    onModeChange = { active ->
-                        viewModel.updateState { copy(isActiveVowMode = active) }
-                    }
-                )
-                5 -> SlideFeatures()
-                6 -> SlideReady(
+                4 -> SlideFeatures()
+                5 -> SlideReady(
                     recommendedApplied = recommendedApplied,
                     onApplyRecommended = {
                         viewModel.applyRecommendedSettings(selectedApps, uiState.banDomainSet)
@@ -618,50 +612,6 @@ private fun SlidePermissions(
 }
 
 @Composable
-private fun SlideVowMode(
-    isActiveVowMode: Boolean,
-    onModeChange: (Boolean) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(top = 24.dp)
-    ) {
-        SlideTitle("How should it enforce?")
-        Text(
-            text = "Passive only holds while a binding vow is running — set a timer, and your quiet hours and usage limits stay locked until it ends. Active enforces your rules around the clock — no vow, no timer needed.",
-            color = SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            lineHeight = 18.sp
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .sharpBorder(1.dp, OutlineAccent)
-        ) {
-            ModeSegment("PASSIVE", selected = !isActiveVowMode, onClick = { onModeChange(false) }, modifier = Modifier.weight(1f))
-            ModeSegment("ACTIVE", selected = isActiveVowMode, onClick = { onModeChange(true) }, modifier = Modifier.weight(1f))
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = if (isActiveVowMode) {
-                "ACTIVE — your quiet hours and usage limits block continuously, no vow required."
-            } else {
-                "PASSIVE — nothing blocks until you set a binding vow; then your rules hold for its duration."
-            },
-            color = if (isActiveVowMode) MonospaceText else SubtextGrey,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            lineHeight = 17.sp
-        )
-    }
-}
-
-@Composable
 private fun SlideFeatures() {
     Column(
         modifier = Modifier
@@ -670,13 +620,39 @@ private fun SlideFeatures() {
             .padding(top = 24.dp)
     ) {
         SlideTitle("What aVow can do")
+        FeatureRow("BINDING VOWS", "Set a timer and your rules lock in — hard to undo on impulse until it ends. That's the point.")
         FeatureRow("SCHEDULED BLOCKS", "Block chosen apps and sites during set hours — like 10pm–7am.")
-        FeatureRow("USAGE LIMITS", "Give yourself a daily or hourly time budget per app.")
+        FeatureRow("USAGE LIMITS", "Give yourself a daily or hourly time budget for your apps.")
         FeatureRow("DOOMSCROLL SHIELD", "When you linger too long, it locks you out to cool off.")
         FeatureRow("FOCUS INSIGHTS", "See your focus sessions and a zen score over time.")
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(OutlineAccent)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "PASSIVE vs ACTIVE",
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "PASSIVE (default): your rules only enforce while a vow timer is running. ACTIVE: your rules enforce on their own schedule with no vow needed. You can switch this anytime on the dashboard.",
+            color = SubtextGrey,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
+        )
         Spacer(modifier = Modifier.height(20.dp))
         Text(
-            text = "You can set all of this yourself later — or tap \"Use recommended settings\" on the next screen for a sensible start.",
+            text = "Set all of this yourself later — or tap \"Use recommended settings\" on the next screen for a sensible start.",
             color = SubtextGrey,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
@@ -753,7 +729,7 @@ private fun SlideReady(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                text = "Passive · 10pm–7am block · 10 min/hour limit on your apps.",
+                text = "Passive · 10pm–7am block · 10 min/hour combined across your apps.",
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
@@ -988,31 +964,6 @@ private fun PermissionStatusCard(
                 modifier = Modifier.width(96.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun ModeSegment(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .then(if (selected) Modifier.background(MonospaceText) else Modifier)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = if (selected) LightGraphiteBg else MonospaceText,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
     }
 }
 
