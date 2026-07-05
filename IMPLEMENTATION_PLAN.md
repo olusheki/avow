@@ -424,7 +424,14 @@ Found on-device after W3 merged. Branch `fix/enforcement-followups`, suite 89 gr
 
 ---
 
-## W6 · `feat/onboarding-and-recommended`  *(depends on W2 app-selection model; W4 for permission copy)*
+## W6 · `feat/onboarding-recommended` · ✅ DONE (2026-07-04)
+> Branch `feat/onboarding-recommended`, both flavors 96/96. Added a "What aVow can do" features slide
+> (T1); the final slide now has one-tap "Use recommended settings" (passive, 10pm–7am block on chosen
+> apps/domains, 10 min/hour independent limit) + a HH:MM clock scroller that inflicts the first vow so
+> enforcement actually starts, landing on LOCKED_VAULT (T2); typewriter text is tap-to-skip (T3).
+> `completeOnboarding` now lands on the vault state matching the vow.
+
+## W6 · `feat/onboarding-and-recommended`  *(original notes)*
 
 ### W6-T1 · Feature-education onboarding slides  `[U:8]` · M
 - **Goal:** Teach how to actually use the app: scheduled blocks, usage limits, doomscroll detection,
