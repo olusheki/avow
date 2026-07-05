@@ -2584,9 +2584,9 @@ fun DoomscrollConfigDialog(
                     )
                 }
 
-                if (uiState.doomscrollShieldEnabled) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable { toggleAllTime() }.padding(vertical = 4.dp),
+                // All controls are always visible; the ENABLE switch above just turns enforcement on.
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { toggleAllTime() }.padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -2598,24 +2598,24 @@ fun DoomscrollConfigDialog(
                         )
                     }
 
-                    if (!uiState.doomscrollAllTime) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("START TIME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = !isLocked) { doomscrollTimePickerTarget = "START" },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(formatTimeAmPm(uiState.doomscrollStartHour, uiState.doomscrollStartMin), color = if (!isLocked) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
+                    // Start/end pickers stay visible but grey out when "restrict all day" is on.
+                    val timesEditable = !isLocked && !uiState.doomscrollAllTime
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("START TIME: ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = timesEditable) { doomscrollTimePickerTarget = "START" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(formatTimeAmPm(uiState.doomscrollStartHour, uiState.doomscrollStartMin), color = if (timesEditable) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("END TIME:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = !isLocked) { doomscrollTimePickerTarget = "END" },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(formatTimeAmPm(uiState.doomscrollEndHour, uiState.doomscrollEndMin), color = if (!isLocked) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("END TIME:   ", color = SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier.width(100.dp).height(30.dp).border(1.dp, OutlineAccent).background(MutedSurface).clickable(enabled = timesEditable) { doomscrollTimePickerTarget = "END" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(formatTimeAmPm(uiState.doomscrollEndHour, uiState.doomscrollEndMin), color = if (timesEditable) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -2675,7 +2675,6 @@ fun DoomscrollConfigDialog(
                             }
                         }
                     }
-                }
             }
         }
 
