@@ -320,9 +320,24 @@ class BlockerService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         try {
             val pkgName = event.packageName?.toString() ?: return
-            
-            // Avoid intercepting our own app
-            if (pkgName == packageName) return
+
+            // Our own UI (the vault, or the intercept/lockout overlay) came to the foreground.
+            // Record it as the foreground package so the usage/doomscroll trackers see the target
+            // app is no longer in front and stop firing the overlay. Otherwise the trackers keep
+            // believing the target app is foreground and re-launch the overlay ~1s after every
+            // double-tap dismissal, trapping the user on the block screen. Never enforce against us.
+            if (pkgName == packageName) {
+                if ((event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                        event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) &&
+                    currentForegroundPackage != packageName
+                ) {
+                    val oldForeground = currentForegroundPackage
+                    currentForegroundPackage = packageName
+                    handleForegroundPackageChange(oldForeground, packageName)
+                    manageTrackingJob()
+                }
+                return
+            }
 
             // Eagerly check and reset cache if a new usage interval begins
             val nowMs = System.currentTimeMillis()
