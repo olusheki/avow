@@ -26,6 +26,24 @@ class StateSignatureTest {
     @get:Rule
     val tmpFolder = TemporaryFolder()
 
+    /** Test-local convenience: the five-arg signature over an otherwise-default state. Replaces the
+     *  former production `VowValidator.computeStateSignature`, which only tests ever referenced. */
+    private fun stateSignature(
+        isVowActive: Boolean,
+        remainingSeconds: Long,
+        lastUptimeMillis: Long,
+        banDomainSet: Set<String>,
+        targetAppSet: Set<String>
+    ): String = VowValidator.computeHMACSignature(
+        isVowActive = isVowActive,
+        isActiveVowMode = false,
+        remainingSeconds = remainingSeconds,
+        lastUptimeMillis = lastUptimeMillis,
+        banDomainSet = banDomainSet,
+        targetAppSet = targetAppSet,
+        deactivationRequestTime = 0L
+    )
+
     @Test
     fun testValidStateSignatureSucceeds() = runTest {
         val tempFile = tmpFolder.newFile("test_settings_signature_valid.preferences_pb")
@@ -47,7 +65,7 @@ class StateSignatureTest {
             prefs[VowDataStore.LAST_SYSTEM_UPTIME_MILLIS] = uptime
             prefs[VowDataStore.BAN_DOMAIN_SET] = domains
             prefs[VowDataStore.TARGET_APP_SET] = apps
-            prefs[VowDataStore.STATE_SIGNATURE] = VowValidator.computeStateSignature(isActive, remaining, uptime, domains, apps)
+            prefs[VowDataStore.STATE_SIGNATURE] = stateSignature(isActive, remaining, uptime, domains, apps)
         }
 
         val prefs = testDataStore.data.first()
@@ -71,8 +89,8 @@ class StateSignatureTest {
         val appsPermutation2 = setOf("com.facebook.katana", "com.tiktok.android")
         
         // WHEN: Computing signatures for each permutation
-        val sig1 = VowValidator.computeStateSignature(isActive, remaining, uptime, domainsPermutation1, appsPermutation1)
-        val sig2 = VowValidator.computeStateSignature(isActive, remaining, uptime, domainsPermutation2, appsPermutation2)
+        val sig1 = stateSignature(isActive, remaining, uptime, domainsPermutation1, appsPermutation1)
+        val sig2 = stateSignature(isActive, remaining, uptime, domainsPermutation2, appsPermutation2)
         
         // THEN: The computed hashes must be mathematically identical (sorting handles permutations)
         assertEquals(sig1, sig2)
@@ -89,7 +107,7 @@ class StateSignatureTest {
         val uptime = 123456L
         val domains = setOf("facebook.com")
         val apps = emptySet<String>()
-        val validSig = VowValidator.computeStateSignature(isActive, remaining, uptime, domains, apps)
+        val validSig = stateSignature(isActive, remaining, uptime, domains, apps)
         
         testDataStore.edit { prefs ->
             prefs[VowDataStore.IS_VOW_ACTIVE] = isActive

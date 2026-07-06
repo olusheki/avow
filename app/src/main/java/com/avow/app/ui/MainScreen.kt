@@ -383,7 +383,14 @@ fun MainScreen(
                 )
             }
             ScreenState.TEMPORARY_LOCKOUT -> {
-                TemporaryLockoutOverlay(endTimeElapsedRealtime = uiState.temporaryLockoutEndTime)
+                TemporaryLockoutOverlay(
+                    endTimeElapsedRealtime = uiState.temporaryLockoutEndTime,
+                    onExit = {
+                        viewModel.setScreenState(
+                            if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
+                        )
+                    }
+                )
             }
             ScreenState.FOCUS_HISTORY -> {
                 FocusHistoryWorkspace(
@@ -591,6 +598,7 @@ fun StraightFaceOutline(
 @Composable
 fun TemporaryLockoutOverlay(
     endTimeElapsedRealtime: Long = 0L,
+    onExit: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var remainingSec by remember(endTimeElapsedRealtime) {
@@ -605,7 +613,13 @@ fun TemporaryLockoutOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(LightGraphiteBg),
+            .background(LightGraphiteBg)
+            // Double-tap returns to aVow. This does NOT end the cooldown — the service still
+            // intercepts the target apps for its duration — it just frees the user from being
+            // trapped inside aVow's own lockout screen.
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { onExit() })
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -638,6 +652,15 @@ fun TemporaryLockoutOverlay(
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 40.dp)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "Target apps stay locked. Double-tap to return to aVow.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 40.dp)
             )
@@ -3503,7 +3526,7 @@ fun BindingVowConfigDialog(
                 val m = vowMinutes.toLong()
                 val s = vowSeconds.toLong()
                 val totalSeconds = d * 86400L + h * 3600L + m * 60L + s
-                val isValid = totalSeconds > 0L
+                val isValid = totalSeconds in 1..com.avow.app.util.VowValidator.MAX_VOW_SECONDS
 
                 Box(
                     modifier = Modifier

@@ -14,7 +14,9 @@ import com.avow.app.model.VowBlock
 
 object VowValidator {
 
-    const val MAX_VOW_SECONDS = 30L * 24L * 3600L // 30 days maximum
+    // 99:23:59:59 ceiling. Kept at exactly two days-digits so the countdown day column never needs
+    // three digits, and so the duration wheels (max 99/23/59/59) can't produce a value above it.
+    const val MAX_VOW_SECONDS = 99L * 86400L + 23L * 3600L + 59L * 60L + 59L
     
     private const val KEY_ALIAS = "vow_hmac_key"
     private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
@@ -188,27 +190,6 @@ object VowValidator {
         mac.init(secretKey)
         val digest = mac.doFinal(input.toByteArray(Charsets.UTF_8))
         return digest.fold("") { str, it -> str + "%02x".format(it) }
-    }
-
-    /**
-     * Backwards-compatible signature helper for legacy test suites or configurations.
-     */
-    fun computeStateSignature(
-        isVowActive: Boolean,
-        remainingSeconds: Long,
-        lastUptimeMillis: Long,
-        banDomainSet: Set<String>,
-        targetAppSet: Set<String>
-    ): String {
-        return computeHMACSignature(
-            isVowActive = isVowActive,
-            isActiveVowMode = false,
-            remainingSeconds = remainingSeconds,
-            lastUptimeMillis = lastUptimeMillis,
-            banDomainSet = banDomainSet,
-            targetAppSet = targetAppSet,
-            deactivationRequestTime = 0L
-        )
     }
 
     /**

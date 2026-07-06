@@ -60,15 +60,22 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent != null) {
+            // Consume each extra and strip it: onCreate re-reads the (sticky) launch intent on every
+            // recreation (rotation, process death, theme change), so a leftover extra would re-fire
+            // its overlay with no real block behind it.
             if (intent.getBooleanExtra("TRIGGER_INTRUSION", false)) {
                 intrusionReasonState.value = intent.getStringExtra("BLOCK_REASON")
                 triggerIntrusionState.value = true
+                intent.removeExtra("TRIGGER_INTRUSION")
+                intent.removeExtra("BLOCK_REASON")
             }
             if (intent.getBooleanExtra("PRELOAD_15M_VOW", false)) {
                 preload15mVowState.value = true
+                intent.removeExtra("PRELOAD_15M_VOW")
             }
             if (intent.getBooleanExtra("IS_TEMPORARY_LOCKOUT", false)) {
                 isTemporaryLockoutState.value = true
+                intent.removeExtra("IS_TEMPORARY_LOCKOUT")
             }
         }
     }

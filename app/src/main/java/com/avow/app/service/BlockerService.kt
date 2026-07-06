@@ -41,7 +41,13 @@ class BlockerService : AccessibilityService() {
     }
 
     private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
+    // Fire-and-forget DataStore writes are launched into this scope; a thrown IOException (disk full,
+    // corrupt prefs file) would otherwise propagate uncaught and kill the whole app process — taking
+    // enforcement down with it. Log and carry on instead.
+    private val serviceExceptionHandler = CoroutineExceptionHandler { _, e ->
+        Log.e(TAG, "Uncaught exception in a BlockerService coroutine, recovered.", e)
+    }
+    private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob + serviceExceptionHandler)
     private var trackingJob: Job? = null
 
     // Lightweight in-memory cache of restriction variables
@@ -764,12 +770,6 @@ class BlockerService : AccessibilityService() {
                 }
             }
         }
-    }
-
-    private fun isCurrentTimeBetween11PMAnd5AM(): Boolean {
-        val calendar = Calendar.getInstance()
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        return hour >= 23 || hour < 5
     }
 
     private fun isCurrentTimeInQuietHours(startHour: Int, startMin: Int, endHour: Int, endMin: Int): Boolean {

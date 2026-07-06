@@ -25,8 +25,8 @@ class DirectBootClampingTest {
     fun testClampingPositiveOverflowValue() {
         val overflowSeconds = Long.MAX_VALUE
         val clamped = VowValidator.clampRemainingSeconds(overflowSeconds)
-        val maxExpectedLimit = 30L * 24L * 3600L
-        assertEquals(maxExpectedLimit, clamped)
+        // The ceiling is 99:23:59:59 (see VowValidator.MAX_VOW_SECONDS).
+        assertEquals(VowValidator.MAX_VOW_SECONDS, clamped)
     }
 
     @Test
@@ -54,9 +54,8 @@ class DirectBootClampingTest {
             lastUptimeMillis = lastUptime,
             savedRemainingSeconds = savedRemaining
         )
-        
-        val maxExpectedLimit = 30L * 24L * 3600L
-        assertEquals(maxExpectedLimit, remaining)
+
+        assertEquals(VowValidator.MAX_VOW_SECONDS, remaining)
     }
 
     @Test

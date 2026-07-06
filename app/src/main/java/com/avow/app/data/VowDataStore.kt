@@ -445,15 +445,6 @@ class VowDataStore(private val context: Context) {
         }
     }
 
-    suspend fun saveVowActive(isActive: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[IS_VOW_ACTIVE] = isActive
-            preferences[IS_ACTIVE_VOW_MODE] = isActive
-            
-            preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
-        }
-    }
-
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[IS_ONBOARDING_COMPLETED] = completed
@@ -466,13 +457,6 @@ class VowDataStore(private val context: Context) {
             preferences[DEACTIVATION_REQUEST_TIME] = timeMs
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
-        }
-    }
-
-    suspend fun saveAccumulatedUsage(usageMs: Long, lastIntervalStartMs: Long) {
-        context.dataStore.edit { preferences ->
-            preferences[ACCUMULATED_USAGE_MS] = usageMs
-            preferences[LAST_INTERVAL_START_MS] = lastIntervalStartMs
         }
     }
 
