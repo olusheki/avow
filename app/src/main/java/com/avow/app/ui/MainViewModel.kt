@@ -361,7 +361,7 @@ class MainViewModel @JvmOverloads constructor(
                                 deactivateUsbDebugging = state.deactivateUsbDebugging
                             )
                             viewModelScope.launch { vowDataStore.clearVowConfig() }
-                            showToast("aVow: Temporal lock has expired. Restrictions cleared.")
+                            showToast("Vow complete. The lock is lifted.")
                             updateState {
                                 copy(
                                     isVowActive = false,
@@ -593,7 +593,7 @@ class MainViewModel @JvmOverloads constructor(
         if (state.deactivationRequestTime == 0L) {
             updateState { copy(deactivationRequestTime = currentTime) }
             saveConfigToDataStore()
-            showToast("Deactivation requested. 24-hour cooling-off period initiated.")
+            showToast("Deactivation started. 24-hour cooling-off is running.")
         } else {
             val elapsed = currentTime - state.deactivationRequestTime
             val remainingMs = 24L * 3600L * 1000L - elapsed
@@ -601,13 +601,13 @@ class MainViewModel @JvmOverloads constructor(
                 val remainingHours = remainingMs / (3600L * 1000L)
                 val remainingMins = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
                 val remainingSecs = (remainingMs % (60L * 1000L)) / 1000L
-                showToast("Cooling-off active. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
+                showToast("Cooling-off. Try again in ${remainingHours}h ${remainingMins}m ${remainingSecs}s.")
             } else {
                 val err = capabilities.deactivateDeviceOwner()
                 if (err != null) {
                     showToast(err)
                 } else {
-                    showToast("aVow: System Authority Deactivated. Natively Uninstallable.")
+                    showToast("Deactivated. aVow can now be uninstalled.")
                     updateState { copy(deactivationRequestTime = 0L) }
                     saveConfigToDataStore()
                 }
@@ -694,7 +694,7 @@ class MainViewModel @JvmOverloads constructor(
                 ) 
             }
             saveConfigToDataStore()
-            showToast("Binding Vow Inflicted - System Authority Active")
+            showToast("Vow bound. The lock holds.")
             return null
         }
     }

@@ -104,9 +104,9 @@ object MascotMessages {
     /** Reflection on the zen score. */
     fun zenScoreMessage(percentChange: Int): String =
         if (percentChange >= 0)
-            "Your zen score is ${SAGE_OPEN}$percentChange% higher$SAGE_CLOSE than before."
+            "Your zen score is ${SAGE_OPEN}$percentChange points higher$SAGE_CLOSE than before."
         else
-            "Your zen score is ${RED_OPEN}${-percentChange}% lower$RED_CLOSE than before."
+            "Your zen score is ${RED_OPEN}${-percentChange} points lower$RED_CLOSE than before."
 
     /**
      * Builds a single speech-bubble line.

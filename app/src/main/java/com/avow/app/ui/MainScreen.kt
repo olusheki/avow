@@ -251,14 +251,14 @@ fun MainScreen(
                     if (result.resultCode == android.app.Activity.RESULT_OK) {
                         viewModel.enableVpnDomainBlocking()
                     } else {
-                        viewModel.showToast("VPN permission is required to block domains in all browsers.")
+                        viewModel.showToast("VPN permission is needed to block sites in every browser.")
                     }
                 }
                 ConfigurationWorkspace(
                     secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
                             viewModel.saveConfigToDataStore()
@@ -267,7 +267,7 @@ fun MainScreen(
                     privateSpaceEnabled = uiState.privateSpaceEnabled,
                     onPrivateSpaceToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(privateSpaceEnabled = !privateSpaceEnabled) }
                             viewModel.saveConfigToDataStore()
@@ -276,7 +276,7 @@ fun MainScreen(
                     lockUninstall = uiState.lockUninstall,
                     onLockUninstallToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(lockUninstall = !lockUninstall) }
                             viewModel.saveConfigToDataStore()
@@ -285,7 +285,7 @@ fun MainScreen(
                     disallowDataWipe = uiState.disallowDataWipe,
                     onDisallowDataWipeToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(disallowDataWipe = !disallowDataWipe) }
                             viewModel.saveConfigToDataStore()
@@ -294,7 +294,7 @@ fun MainScreen(
                     disableSafeBoot = uiState.disableSafeBoot,
                     onDisableSafeBootToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(disableSafeBoot = !disableSafeBoot) }
                             viewModel.saveConfigToDataStore()
@@ -303,7 +303,7 @@ fun MainScreen(
                     blockPlayStore = uiState.blockPlayStore,
                     onBlockPlayStoreToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(blockPlayStore = !blockPlayStore) }
                             viewModel.saveConfigToDataStore()
@@ -312,7 +312,7 @@ fun MainScreen(
                     dynamicReinstall = uiState.dynamicReinstall,
                     onDynamicReinstallToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(dynamicReinstall = !dynamicReinstall) }
                             viewModel.saveConfigToDataStore()
@@ -321,7 +321,7 @@ fun MainScreen(
                     deactivateUsbDebugging = uiState.deactivateUsbDebugging,
                     onDeactivateUsbDebuggingToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(deactivateUsbDebugging = !deactivateUsbDebugging) }
                             viewModel.saveConfigToDataStore()
@@ -336,7 +336,7 @@ fun MainScreen(
                     },
                     onDomainRemove = { domain ->
                         if (uiState.isVowActive) {
-                            viewModel.showToast("Error: Cannot remove domains while locked.")
+                            viewModel.showToast("Domains can't be removed while locked.")
                         } else {
                             viewModel.updateState { copy(banDomainSet = banDomainSet - domain) }
                             viewModel.saveConfigToDataStore()
@@ -359,7 +359,7 @@ fun MainScreen(
                             else viewModel.enableVpnDomainBlocking()
                         } else if (uiState.isVowActive) {
                             // Disabling is loosening — not allowed during a vow.
-                            viewModel.showToast("Error: Domain blocking can't be turned off while locked.")
+                            viewModel.showToast("Domain blocking stays on while locked.")
                         } else {
                             viewModel.disableVpnDomainBlocking()
                         }
@@ -422,18 +422,18 @@ fun MainScreen(
                     if (uiState.isVowActive) {
                         val isContainmentValid = com.avow.app.util.VowValidator.validateContainment(uiState.frozenVowBlocks, newBlocks)
                         if (!isContainmentValid) {
-                            viewModel.showToast("Error: Scheduled blocks cannot be shortened, shifted or deleted when locked.")
+                            viewModel.showToast("Blocks can only widen while locked, not shrink or move.")
                         } else {
                             viewModel.updateState { copy(vowBlocks = newBlocks, frozenVowBlocks = newBlocks) }
                             viewModel.saveConfigToDataStore()
                             showQuietHoursDialog = false
-                            viewModel.showToast("Scheduled blocks updated (stricter).")
+                            viewModel.showToast("Blocks updated — stricter.")
                         }
                     } else {
                         viewModel.updateState { copy(vowBlocks = newBlocks) }
                         viewModel.saveConfigToDataStore()
                         showQuietHoursDialog = false
-                        viewModel.showToast("Scheduled blocks updated.")
+                        viewModel.showToast("Blocks updated.")
                     }
                 }
             )
@@ -454,24 +454,24 @@ fun MainScreen(
                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     val minutesVal = newAllowedValue.toFloatOrNull()
                     if (minutesVal == null || minutesVal <= 0f) {
-                        viewModel.showToast("Error: Invalid allowed value.")
+                        viewModel.showToast("Enter a limit above zero.")
                         return@UsageLimitsConfigDialog
                     }
                     
                     if (uiState.isVowActive) {
                         if (uiState.usageLimitsUpdated && !newEnabled) {
-                            viewModel.showToast("Error: Usage limits cannot be disabled while locked.")
+                            viewModel.showToast("Usage limits stay on while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         val removedApps = uiState.targetAppSet - newTargetAppSet
                         if (removedApps.isNotEmpty()) {
-                            viewModel.showToast("Error: Target applications cannot be removed while locked.")
+                            viewModel.showToast("Apps can't be removed while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         val newRate = com.avow.app.util.VowValidator.getUsageLimitRate(newAllowedValue, newAllowedUnit, newSelectedInterval)
                         val oldRate = com.avow.app.util.VowValidator.getUsageLimitRate(uiState.frozenAllowedValue, uiState.frozenAllowedUnit, uiState.frozenInterval)
                         if (newRate > oldRate) {
-                            viewModel.showToast("Error: Usage limits can only be made stricter (fewer minutes).")
+                            viewModel.showToast("Limits can only get stricter while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         
@@ -485,7 +485,7 @@ fun MainScreen(
                         }
                         viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        viewModel.showToast("Usage limits updated (stricter).")
+                        viewModel.showToast("Limits updated — stricter.")
                     } else {
                         viewModel.updateState { 
                             copy(
@@ -496,7 +496,7 @@ fun MainScreen(
                         }
                         viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        viewModel.showToast("Usage limits updated.")
+                        viewModel.showToast("Limits updated.")
                     }
                 },
                 isCollectiveLimit = uiState.isCollectiveLimit
@@ -2584,7 +2584,7 @@ fun DoomscrollConfigDialog(
 
     fun toggleShield() {
         if (isLocked && uiState.doomscrollShieldEnabled) {
-            viewModel.showToast("Error: The Doomscroll Shield can't be turned off while locked.")
+            viewModel.showToast("The shield stays on while locked.")
         } else {
             val enabling = !uiState.doomscrollShieldEnabled
             viewModel.updateState { copy(doomscrollShieldEnabled = enabling) }
@@ -2597,7 +2597,7 @@ fun DoomscrollConfigDialog(
     fun toggleAllTime() {
         val enabling = !uiState.doomscrollAllTime
         if (isLocked && !enabling) {
-            viewModel.showToast("Error: All-day restriction can't be turned off while locked.")
+            viewModel.showToast("All-day stays on while locked.")
         } else {
             viewModel.updateState { copy(doomscrollAllTime = enabling) }
             viewModel.saveConfigToDataStore()
@@ -2610,7 +2610,7 @@ fun DoomscrollConfigDialog(
                 uiState.frozenDoomscrollEndHour, uiState.frozenDoomscrollEndMin, sh, sm, eh, em
             )
             if (!stricter) {
-                viewModel.showToast("Error: The restriction window can only be widened while locked.")
+                viewModel.showToast("The window can only widen while locked.")
             } else {
                 viewModel.updateState {
                     copy(
@@ -2631,7 +2631,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateTargets(apps: Set<String>) {
         if (isLocked && (uiState.doomscrollTargetAppSet - apps).isNotEmpty()) {
-            viewModel.showToast("Error: Target applications cannot be removed while locked.")
+            viewModel.showToast("Apps can't be removed while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollTargetAppSet = apps, frozenDoomscrollTargetAppSet = if (isLocked) apps else frozenDoomscrollTargetAppSet)
@@ -2641,7 +2641,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateCooldown(cooldown: Int) {
         if (isLocked && cooldown < uiState.frozenDoomscrollCooldownMinutes) {
-            viewModel.showToast("Error: Cooldown minutes can only be made longer (stricter) while locked.")
+            viewModel.showToast("Cooldown can only get longer while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollCooldownMinutes = cooldown, frozenDoomscrollCooldownMinutes = if (isLocked) cooldown else frozenDoomscrollCooldownMinutes)
@@ -2651,7 +2651,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateAllowance(allowance: Int) {
         if (isLocked && allowance > uiState.frozenDoomscrollAllowanceMinutes) {
-            viewModel.showToast("Error: Allowance minutes can only be made shorter (stricter) while locked.")
+            viewModel.showToast("Allowance can only get shorter while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollAllowanceMinutes = allowance, frozenDoomscrollAllowanceMinutes = if (isLocked) allowance else frozenDoomscrollAllowanceMinutes)
@@ -2844,7 +2844,7 @@ fun TimePickerDialog(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "SELECT TIME (DIAL VIEW)",
+                    text = "SET TIME",
                     color = MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -2994,7 +2994,7 @@ fun BlockSlotEditor(
                 .clickable {
                     val newEnabled = !block.isEnabled
                     if (isLocked && block.isEnabled && !newEnabled) {
-                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                        showToast("Blocks can't be disabled while locked.")
                     } else {
                         onBlockChange(block.copy(isEnabled = newEnabled))
                     }
@@ -3014,7 +3014,7 @@ fun BlockSlotEditor(
                 checked = block.isEnabled,
                 onCheckedChange = { newEnabled ->
                     if (isLocked && block.isEnabled && !newEnabled) {
-                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                        showToast("Blocks can't be disabled while locked.")
                     } else {
                         onBlockChange(block.copy(isEnabled = newEnabled))
                     }
@@ -3168,7 +3168,7 @@ fun BlockSlotEditor(
                         text = label,
                         onRemove = {
                             if (isLocked) {
-                                showToast("Error: Target applications cannot be removed while locked.")
+                                showToast("Apps can't be removed while locked.")
                             } else {
                                 onBlockChange(block.copy(targetApps = block.targetApps - pkg))
                             }
@@ -3314,7 +3314,7 @@ fun QuietHoursConfigDialog(
                         onRemoveSlot = if (currentBlocks.size > 1) {
                             {
                                 if (isLocked) {
-                                    showToast("Error: Scheduled blocks cannot be removed while locked.")
+                                    showToast("Blocks can't be removed while locked.")
                                 } else {
                                     currentBlocks = currentBlocks.filter { it.id != block.id }
                                 }
@@ -3334,7 +3334,7 @@ fun QuietHoursConfigDialog(
                             .background(MutedSurface)
                             .clickable {
                                 if (isLocked) {
-                                    showToast("Error: Cannot add new block slots while locked.")
+                                    showToast("You can't add blocks while locked.")
                                 } else {
                                     currentBlocks = currentBlocks + VowBlock(
                                         id = java.util.UUID.randomUUID().toString(),
@@ -3893,7 +3893,7 @@ fun FocusHistoryWorkspace(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 StatBox(label = "DEVICE PICKUPS", value = totalPickups.toString(), modifier = Modifier.weight(1f))
-                StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}%", modifier = Modifier.weight(1f))
+                StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}", modifier = Modifier.weight(1f))
             }
             
             Spacer(modifier = Modifier.height(28.dp))
@@ -4099,7 +4099,7 @@ fun LogItem(session: com.avow.app.data.history.VowSession) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "ZEN SCORE: ${session.zenScore}%",
+                    text = "ZEN SCORE: ${session.zenScore}",
                     color = if (session.zenScore >= 80) MonospaceText else if (session.zenScore >= 50) SubtextGrey else LockedRed,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
