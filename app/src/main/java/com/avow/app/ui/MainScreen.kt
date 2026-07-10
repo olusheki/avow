@@ -121,6 +121,7 @@ fun MainScreen(
     var showUsageLimitsDialog by remember { mutableStateOf(false) }
     var showBindingVowDialog by remember { mutableStateOf(false) }
     var showDoomscrollDialog by remember { mutableStateOf(false) }
+    var showDeactivateConfirm by remember { mutableStateOf(false) }
 
     var initialDaysForDialog by remember { mutableStateOf("00") }
     var initialHoursForDialog by remember { mutableStateOf("00") }
@@ -364,7 +365,10 @@ fun MainScreen(
                     deactivationRequestTime = uiState.deactivationRequestTime,
                     onDeactivateClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        viewModel.requestDeactivation()
+                        // First tap starts an irreversible 24h cooling-off (during which aVow's own
+                        // settings stay locked), so confirm it. Later taps just report progress.
+                        if (uiState.deactivationRequestTime == 0L) showDeactivateConfirm = true
+                        else viewModel.requestDeactivation()
                     },
                     tickTrigger = uiState.seconds
                 )
@@ -524,6 +528,19 @@ fun MainScreen(
                 viewModel = viewModel,
                 installedApps = uiState.installedApps,
                 onDismiss = { showDoomscrollDialog = false }
+            )
+        }
+
+        if (showDeactivateConfirm) {
+            ConfirmDialog(
+                title = "BEGIN DEACTIVATION?",
+                message = "This starts a 24-hour cooling-off. During it, aVow's own settings stay locked. After 24 hours, tap again to fully deactivate.",
+                confirmLabel = "START COOLING-OFF",
+                onConfirm = {
+                    showDeactivateConfirm = false
+                    viewModel.requestDeactivation()
+                },
+                onDismiss = { showDeactivateConfirm = false }
             )
         }
 
@@ -3430,6 +3447,8 @@ fun BindingVowConfigDialog(
     var vowHours by remember { mutableStateOf(initialHours.toIntOrNull() ?: 0) }
     var vowMinutes by remember { mutableStateOf(initialMinutes.toIntOrNull() ?: 0) }
     var vowSeconds by remember { mutableStateOf(initialSeconds.toIntOrNull() ?: 0) }
+    // Gate vows of a day or more behind a confirmation before inflicting.
+    var showConfirm by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -3534,7 +3553,10 @@ fun BindingVowConfigDialog(
                         .height(44.dp)
                         .background(if (isValid) MonospaceText else OutlineAccent)
                         .clickable(enabled = isValid) {
-                            onConfirm(totalSeconds)
+                            // Vows of a day or more are a big, irreversible commitment — confirm
+                            // those; shorter ones inflict immediately.
+                            if (totalSeconds >= 86400L) showConfirm = true
+                            else onConfirm(totalSeconds)
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -3544,6 +3566,101 @@ fun BindingVowConfigDialog(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (showConfirm) {
+                    ConfirmDialog(
+                        title = if (isLockedState) "ADD A DAY OR MORE?" else "INFLICT A 24H+ VOW?",
+                        message = (if (isLockedState) "This adds " else "This locks you in for ") +
+                            formatVowDuration(totalSeconds) + ". It can't be undone until it ends.",
+                        confirmLabel = if (isLockedState) "ADD IT" else "HOLD ME TO IT",
+                        onConfirm = {
+                            showConfirm = false
+                            onConfirm(totalSeconds)
+                        },
+                        onDismiss = { showConfirm = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Formats a vow duration as `Nd HH:MM:SS` (days omitted below a day). */
+fun formatVowDuration(totalSeconds: Long): String {
+    val d = totalSeconds / 86400
+    val h = (totalSeconds % 86400) / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (d > 0) String.format("%dd %02d:%02d:%02d", d, h, m, s)
+    else String.format("%02d:%02d:%02d", h, m, s)
+}
+
+/**
+ * Stark confirmation dialog in the app's terminal aesthetic. Cancel on the left, the (emphasised)
+ * confirm action on the right. Used for the irreversible commitments — long vows and deactivation.
+ */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LightGraphiteBg)
+                .sharpBorder(1.dp, OutlineAccent)
+                .padding(20.dp)
+        ) {
+            Text(
+                text = title,
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(OutlineAccent))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = message,
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 19.sp
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SharpBorderButton(
+                    text = "{ CANCEL }",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .background(MonospaceText)
+                        .sharpBorder(1.dp, OutlineAccent)
+                        .clickable(onClick = onConfirm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = confirmLabel,
+                        color = Color(0xFF1C1C1C),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
                     )
                 }
             }
