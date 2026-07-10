@@ -93,6 +93,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 // Slightly darker gray color for activated panels
 val DarkerSurfaceColor = Color(0xFF5A5A5A)
 
+// Placeholder until the policy is hosted (task G-1); swap for the hosted URL then.
+private const val PRIVACY_POLICY_URL = "https://github.com/olusheki/avow/blob/main/PRIVACY_POLICY.md"
+
 fun formatTimeAmPm(hour: Int, minute: Int): String {
     val displayHour = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
@@ -1732,6 +1735,14 @@ fun SettingsFooterSection() {
             try {
                 context.startActivity(
                     Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://buymeacoffee.com/avow"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) { /* no browser */ }
+        }
+        SettingsLinkRow("Privacy policy", "view") {
+            try {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(PRIVACY_POLICY_URL))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             } catch (e: Exception) { /* no browser */ }
