@@ -93,6 +93,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 // Slightly darker gray color for activated panels
 val DarkerSurfaceColor = Color(0xFF5A5A5A)
 
+// Placeholder until the policy is hosted (task G-1); swap for the hosted URL then.
+private const val PRIVACY_POLICY_URL = "https://github.com/olusheki/avow/blob/main/PRIVACY_POLICY.md"
+
 fun formatTimeAmPm(hour: Int, minute: Int): String {
     val displayHour = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
@@ -121,6 +124,7 @@ fun MainScreen(
     var showUsageLimitsDialog by remember { mutableStateOf(false) }
     var showBindingVowDialog by remember { mutableStateOf(false) }
     var showDoomscrollDialog by remember { mutableStateOf(false) }
+    var showDeactivateConfirm by remember { mutableStateOf(false) }
 
     var initialDaysForDialog by remember { mutableStateOf("00") }
     var initialHoursForDialog by remember { mutableStateOf("00") }
@@ -247,14 +251,14 @@ fun MainScreen(
                     if (result.resultCode == android.app.Activity.RESULT_OK) {
                         viewModel.enableVpnDomainBlocking()
                     } else {
-                        viewModel.showToast("VPN permission is required to block domains in all browsers.")
+                        viewModel.showToast("VPN permission is needed to block sites in every browser.")
                     }
                 }
                 ConfigurationWorkspace(
                     secureFolderEnabled = uiState.secureFolderEnabled,
                     onSecureFolderToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(secureFolderEnabled = !secureFolderEnabled) }
                             viewModel.saveConfigToDataStore()
@@ -263,7 +267,7 @@ fun MainScreen(
                     privateSpaceEnabled = uiState.privateSpaceEnabled,
                     onPrivateSpaceToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(privateSpaceEnabled = !privateSpaceEnabled) }
                             viewModel.saveConfigToDataStore()
@@ -272,7 +276,7 @@ fun MainScreen(
                     lockUninstall = uiState.lockUninstall,
                     onLockUninstallToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(lockUninstall = !lockUninstall) }
                             viewModel.saveConfigToDataStore()
@@ -281,7 +285,7 @@ fun MainScreen(
                     disallowDataWipe = uiState.disallowDataWipe,
                     onDisallowDataWipeToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(disallowDataWipe = !disallowDataWipe) }
                             viewModel.saveConfigToDataStore()
@@ -290,7 +294,7 @@ fun MainScreen(
                     disableSafeBoot = uiState.disableSafeBoot,
                     onDisableSafeBootToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(disableSafeBoot = !disableSafeBoot) }
                             viewModel.saveConfigToDataStore()
@@ -299,7 +303,7 @@ fun MainScreen(
                     blockPlayStore = uiState.blockPlayStore,
                     onBlockPlayStoreToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(blockPlayStore = !blockPlayStore) }
                             viewModel.saveConfigToDataStore()
@@ -308,7 +312,7 @@ fun MainScreen(
                     dynamicReinstall = uiState.dynamicReinstall,
                     onDynamicReinstallToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(dynamicReinstall = !dynamicReinstall) }
                             viewModel.saveConfigToDataStore()
@@ -317,7 +321,7 @@ fun MainScreen(
                     deactivateUsbDebugging = uiState.deactivateUsbDebugging,
                     onDeactivateUsbDebuggingToggle = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        if (uiState.isVowActive) viewModel.showToast("Error: Restrictions cannot be modified while locked.")
+                        if (uiState.isVowActive) viewModel.showToast("Restrictions are locked while a vow holds.")
                         else {
                             viewModel.updateState { copy(deactivateUsbDebugging = !deactivateUsbDebugging) }
                             viewModel.saveConfigToDataStore()
@@ -332,7 +336,7 @@ fun MainScreen(
                     },
                     onDomainRemove = { domain ->
                         if (uiState.isVowActive) {
-                            viewModel.showToast("Error: Cannot remove domains while locked.")
+                            viewModel.showToast("Domains can't be removed while locked.")
                         } else {
                             viewModel.updateState { copy(banDomainSet = banDomainSet - domain) }
                             viewModel.saveConfigToDataStore()
@@ -355,7 +359,7 @@ fun MainScreen(
                             else viewModel.enableVpnDomainBlocking()
                         } else if (uiState.isVowActive) {
                             // Disabling is loosening — not allowed during a vow.
-                            viewModel.showToast("Error: Domain blocking can't be turned off while locked.")
+                            viewModel.showToast("Domain blocking stays on while locked.")
                         } else {
                             viewModel.disableVpnDomainBlocking()
                         }
@@ -364,7 +368,10 @@ fun MainScreen(
                     deactivationRequestTime = uiState.deactivationRequestTime,
                     onDeactivateClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        viewModel.requestDeactivation()
+                        // First tap starts an irreversible 24h cooling-off (during which aVow's own
+                        // settings stay locked), so confirm it. Later taps just report progress.
+                        if (uiState.deactivationRequestTime == 0L) showDeactivateConfirm = true
+                        else viewModel.requestDeactivation()
                     },
                     tickTrigger = uiState.seconds
                 )
@@ -415,18 +422,18 @@ fun MainScreen(
                     if (uiState.isVowActive) {
                         val isContainmentValid = com.avow.app.util.VowValidator.validateContainment(uiState.frozenVowBlocks, newBlocks)
                         if (!isContainmentValid) {
-                            viewModel.showToast("Error: Scheduled blocks cannot be shortened, shifted or deleted when locked.")
+                            viewModel.showToast("Blocks can only widen while locked, not shrink or move.")
                         } else {
                             viewModel.updateState { copy(vowBlocks = newBlocks, frozenVowBlocks = newBlocks) }
                             viewModel.saveConfigToDataStore()
                             showQuietHoursDialog = false
-                            viewModel.showToast("Scheduled blocks updated (stricter).")
+                            viewModel.showToast("Blocks updated — stricter.")
                         }
                     } else {
                         viewModel.updateState { copy(vowBlocks = newBlocks) }
                         viewModel.saveConfigToDataStore()
                         showQuietHoursDialog = false
-                        viewModel.showToast("Scheduled blocks updated.")
+                        viewModel.showToast("Blocks updated.")
                     }
                 }
             )
@@ -447,24 +454,24 @@ fun MainScreen(
                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     val minutesVal = newAllowedValue.toFloatOrNull()
                     if (minutesVal == null || minutesVal <= 0f) {
-                        viewModel.showToast("Error: Invalid allowed value.")
+                        viewModel.showToast("Enter a limit above zero.")
                         return@UsageLimitsConfigDialog
                     }
                     
                     if (uiState.isVowActive) {
                         if (uiState.usageLimitsUpdated && !newEnabled) {
-                            viewModel.showToast("Error: Usage limits cannot be disabled while locked.")
+                            viewModel.showToast("Usage limits stay on while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         val removedApps = uiState.targetAppSet - newTargetAppSet
                         if (removedApps.isNotEmpty()) {
-                            viewModel.showToast("Error: Target applications cannot be removed while locked.")
+                            viewModel.showToast("Apps can't be removed while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         val newRate = com.avow.app.util.VowValidator.getUsageLimitRate(newAllowedValue, newAllowedUnit, newSelectedInterval)
                         val oldRate = com.avow.app.util.VowValidator.getUsageLimitRate(uiState.frozenAllowedValue, uiState.frozenAllowedUnit, uiState.frozenInterval)
                         if (newRate > oldRate) {
-                            viewModel.showToast("Error: Usage limits can only be made stricter (fewer minutes).")
+                            viewModel.showToast("Limits can only get stricter while locked.")
                             return@UsageLimitsConfigDialog
                         }
                         
@@ -478,7 +485,7 @@ fun MainScreen(
                         }
                         viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        viewModel.showToast("Usage limits updated (stricter).")
+                        viewModel.showToast("Limits updated — stricter.")
                     } else {
                         viewModel.updateState { 
                             copy(
@@ -489,7 +496,7 @@ fun MainScreen(
                         }
                         viewModel.saveConfigToDataStore()
                         showUsageLimitsDialog = false
-                        viewModel.showToast("Usage limits updated.")
+                        viewModel.showToast("Limits updated.")
                     }
                 },
                 isCollectiveLimit = uiState.isCollectiveLimit
@@ -524,6 +531,19 @@ fun MainScreen(
                 viewModel = viewModel,
                 installedApps = uiState.installedApps,
                 onDismiss = { showDoomscrollDialog = false }
+            )
+        }
+
+        if (showDeactivateConfirm) {
+            ConfirmDialog(
+                title = "BEGIN DEACTIVATION?",
+                message = "This starts a 24-hour cooling-off. During it, aVow's own settings stay locked. After 24 hours, tap again to fully deactivate.",
+                confirmLabel = "START COOLING-OFF",
+                onConfirm = {
+                    showDeactivateConfirm = false
+                    viewModel.requestDeactivation()
+                },
+                onDismiss = { showDeactivateConfirm = false }
             )
         }
 
@@ -894,6 +914,22 @@ fun VaultDashboard(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        // Enforcement is dead if the accessibility service is off (OEM battery kill, user action,
+        // a boot crash). Re-check on every resume so the dashboard never looks armed when it isn't.
+        val enforcementContext = LocalContext.current
+        val enforcementLifecycle = LocalLifecycleOwner.current
+        var accessRefresh by remember { mutableStateOf(0) }
+        DisposableEffect(enforcementLifecycle) {
+            val observer = LifecycleEventObserver { _, e ->
+                if (e == Lifecycle.Event.ON_RESUME) accessRefresh++
+            }
+            enforcementLifecycle.lifecycle.addObserver(observer)
+            onDispose { enforcementLifecycle.lifecycle.removeObserver(observer) }
+        }
+        val accessibilityOn = remember(accessRefresh) {
+            isAccessibilityServiceEnabled(enforcementContext, BlockerService::class.java)
+        }
+
         // 1. Top status bar layout (Stark header) with mascot + speech bubble
         var bubbleVisible by remember { mutableStateOf(false) }
         var bubbleMessage by remember { mutableStateOf("") }
@@ -1004,6 +1040,35 @@ fun VaultDashboard(
                 .height(1.dp)
                 .background(OutlineAccent)
         )
+
+        if (!accessibilityOn) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 12.dp)
+                    .background(MutedSurface)
+                    .sharpBorder(1.dp, LockedRed)
+                    .clickable {
+                        enforcementContext.startActivity(
+                            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "[ ENFORCEMENT OFFLINE — TAP TO FIX ]",
+                    color = LockedRed,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(36.dp))
 
@@ -1666,7 +1731,22 @@ fun SettingsFooterSection() {
                 )
             } catch (e: Exception) { /* no email app */ }
         }
-        SettingsLinkRow("Support aVow (donate)", "coming soon") { /* TODO: external donation URL */ }
+        SettingsLinkRow("Support aVow (donate)", "buymeacoffee.com/avow") {
+            try {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://buymeacoffee.com/avow"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) { /* no browser */ }
+        }
+        SettingsLinkRow("Privacy policy", "view") {
+            try {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(PRIVACY_POLICY_URL))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) { /* no browser */ }
+        }
         Text(
             text = "aVow v$versionName",
             color = SubtextGrey,
@@ -1980,6 +2060,14 @@ fun IntrusionInterceptOverlay(
                     letterSpacing = 1.sp
                 )
             }
+            Spacer(modifier = Modifier.height(28.dp))
+            Text(
+                text = "Double-tap anywhere to close.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -2496,7 +2584,7 @@ fun DoomscrollConfigDialog(
 
     fun toggleShield() {
         if (isLocked && uiState.doomscrollShieldEnabled) {
-            viewModel.showToast("Error: The Doomscroll Shield can't be turned off while locked.")
+            viewModel.showToast("The shield stays on while locked.")
         } else {
             val enabling = !uiState.doomscrollShieldEnabled
             viewModel.updateState { copy(doomscrollShieldEnabled = enabling) }
@@ -2509,7 +2597,7 @@ fun DoomscrollConfigDialog(
     fun toggleAllTime() {
         val enabling = !uiState.doomscrollAllTime
         if (isLocked && !enabling) {
-            viewModel.showToast("Error: All-day restriction can't be turned off while locked.")
+            viewModel.showToast("All-day stays on while locked.")
         } else {
             viewModel.updateState { copy(doomscrollAllTime = enabling) }
             viewModel.saveConfigToDataStore()
@@ -2522,7 +2610,7 @@ fun DoomscrollConfigDialog(
                 uiState.frozenDoomscrollEndHour, uiState.frozenDoomscrollEndMin, sh, sm, eh, em
             )
             if (!stricter) {
-                viewModel.showToast("Error: The restriction window can only be widened while locked.")
+                viewModel.showToast("The window can only widen while locked.")
             } else {
                 viewModel.updateState {
                     copy(
@@ -2543,7 +2631,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateTargets(apps: Set<String>) {
         if (isLocked && (uiState.doomscrollTargetAppSet - apps).isNotEmpty()) {
-            viewModel.showToast("Error: Target applications cannot be removed while locked.")
+            viewModel.showToast("Apps can't be removed while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollTargetAppSet = apps, frozenDoomscrollTargetAppSet = if (isLocked) apps else frozenDoomscrollTargetAppSet)
@@ -2553,7 +2641,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateCooldown(cooldown: Int) {
         if (isLocked && cooldown < uiState.frozenDoomscrollCooldownMinutes) {
-            viewModel.showToast("Error: Cooldown minutes can only be made longer (stricter) while locked.")
+            viewModel.showToast("Cooldown can only get longer while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollCooldownMinutes = cooldown, frozenDoomscrollCooldownMinutes = if (isLocked) cooldown else frozenDoomscrollCooldownMinutes)
@@ -2563,7 +2651,7 @@ fun DoomscrollConfigDialog(
     }
     fun updateAllowance(allowance: Int) {
         if (isLocked && allowance > uiState.frozenDoomscrollAllowanceMinutes) {
-            viewModel.showToast("Error: Allowance minutes can only be made shorter (stricter) while locked.")
+            viewModel.showToast("Allowance can only get shorter while locked.")
         } else {
             viewModel.updateState {
                 copy(doomscrollAllowanceMinutes = allowance, frozenDoomscrollAllowanceMinutes = if (isLocked) allowance else frozenDoomscrollAllowanceMinutes)
@@ -2698,6 +2786,13 @@ fun DoomscrollConfigDialog(
                             }
                         }
                     }
+
+                    Text(
+                        text = "Changes apply immediately.",
+                        color = SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
             }
         }
 
@@ -2749,7 +2844,7 @@ fun TimePickerDialog(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "SELECT TIME (DIAL VIEW)",
+                    text = "SET TIME",
                     color = MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -2899,7 +2994,7 @@ fun BlockSlotEditor(
                 .clickable {
                     val newEnabled = !block.isEnabled
                     if (isLocked && block.isEnabled && !newEnabled) {
-                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                        showToast("Blocks can't be disabled while locked.")
                     } else {
                         onBlockChange(block.copy(isEnabled = newEnabled))
                     }
@@ -2919,7 +3014,7 @@ fun BlockSlotEditor(
                 checked = block.isEnabled,
                 onCheckedChange = { newEnabled ->
                     if (isLocked && block.isEnabled && !newEnabled) {
-                        showToast("Error: Scheduled blocks cannot be disabled when locked.")
+                        showToast("Blocks can't be disabled while locked.")
                     } else {
                         onBlockChange(block.copy(isEnabled = newEnabled))
                     }
@@ -3073,7 +3168,7 @@ fun BlockSlotEditor(
                         text = label,
                         onRemove = {
                             if (isLocked) {
-                                showToast("Error: Target applications cannot be removed while locked.")
+                                showToast("Apps can't be removed while locked.")
                             } else {
                                 onBlockChange(block.copy(targetApps = block.targetApps - pkg))
                             }
@@ -3219,7 +3314,7 @@ fun QuietHoursConfigDialog(
                         onRemoveSlot = if (currentBlocks.size > 1) {
                             {
                                 if (isLocked) {
-                                    showToast("Error: Scheduled blocks cannot be removed while locked.")
+                                    showToast("Blocks can't be removed while locked.")
                                 } else {
                                     currentBlocks = currentBlocks.filter { it.id != block.id }
                                 }
@@ -3239,7 +3334,7 @@ fun QuietHoursConfigDialog(
                             .background(MutedSurface)
                             .clickable {
                                 if (isLocked) {
-                                    showToast("Error: Cannot add new block slots while locked.")
+                                    showToast("You can't add blocks while locked.")
                                 } else {
                                     currentBlocks = currentBlocks + VowBlock(
                                         id = java.util.UUID.randomUUID().toString(),
@@ -3430,6 +3525,11 @@ fun BindingVowConfigDialog(
     var vowHours by remember { mutableStateOf(initialHours.toIntOrNull() ?: 0) }
     var vowMinutes by remember { mutableStateOf(initialMinutes.toIntOrNull() ?: 0) }
     var vowSeconds by remember { mutableStateOf(initialSeconds.toIntOrNull() ?: 0) }
+    // Gate vows of a day or more behind a confirmation before inflicting.
+    var showConfirm by remember { mutableStateOf(false) }
+    // Guard the confirm from a rapid double-tap, which otherwise fires onConfirm twice (doubling
+    // the added time on the add-time path).
+    var committing by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -3533,8 +3633,15 @@ fun BindingVowConfigDialog(
                         .fillMaxWidth()
                         .height(44.dp)
                         .background(if (isValid) MonospaceText else OutlineAccent)
-                        .clickable(enabled = isValid) {
-                            onConfirm(totalSeconds)
+                        .clickable(enabled = isValid && !committing) {
+                            // Vows of a day or more are a big, irreversible commitment — confirm
+                            // those; shorter ones inflict immediately.
+                            if (totalSeconds >= 86400L) {
+                                showConfirm = true
+                            } else {
+                                committing = true
+                                onConfirm(totalSeconds)
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -3544,6 +3651,102 @@ fun BindingVowConfigDialog(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (showConfirm) {
+                    ConfirmDialog(
+                        title = if (isLockedState) "ADD A DAY OR MORE?" else "INFLICT A 24H+ VOW?",
+                        message = (if (isLockedState) "This adds " else "This locks you in for ") +
+                            formatVowDuration(totalSeconds) + ". It can't be undone until it ends.",
+                        confirmLabel = if (isLockedState) "ADD IT" else "HOLD ME TO IT",
+                        onConfirm = {
+                            showConfirm = false
+                            committing = true
+                            onConfirm(totalSeconds)
+                        },
+                        onDismiss = { showConfirm = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Formats a vow duration as `Nd HH:MM:SS` (days omitted below a day). */
+fun formatVowDuration(totalSeconds: Long): String {
+    val d = totalSeconds / 86400
+    val h = (totalSeconds % 86400) / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (d > 0) String.format("%dd %02d:%02d:%02d", d, h, m, s)
+    else String.format("%02d:%02d:%02d", h, m, s)
+}
+
+/**
+ * Stark confirmation dialog in the app's terminal aesthetic. Cancel on the left, the (emphasised)
+ * confirm action on the right. Used for the irreversible commitments — long vows and deactivation.
+ */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LightGraphiteBg)
+                .sharpBorder(1.dp, OutlineAccent)
+                .padding(20.dp)
+        ) {
+            Text(
+                text = title,
+                color = MonospaceText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(OutlineAccent))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = message,
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 19.sp
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SharpBorderButton(
+                    text = "{ CANCEL }",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .background(MonospaceText)
+                        .sharpBorder(1.dp, OutlineAccent)
+                        .clickable(onClick = onConfirm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = confirmLabel,
+                        color = Color(0xFF1C1C1C),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
                     )
                 }
             }
@@ -3690,7 +3893,7 @@ fun FocusHistoryWorkspace(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 StatBox(label = "DEVICE PICKUPS", value = totalPickups.toString(), modifier = Modifier.weight(1f))
-                StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}%", modifier = Modifier.weight(1f))
+                StatBox(label = "AVG ZEN SCORE", value = "${avgZenScore.roundToInt()}", modifier = Modifier.weight(1f))
             }
             
             Spacer(modifier = Modifier.height(28.dp))
@@ -3896,7 +4099,7 @@ fun LogItem(session: com.avow.app.data.history.VowSession) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "ZEN SCORE: ${session.zenScore}%",
+                    text = "ZEN SCORE: ${session.zenScore}",
                     color = if (session.zenScore >= 80) MonospaceText else if (session.zenScore >= 50) SubtextGrey else LockedRed,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
