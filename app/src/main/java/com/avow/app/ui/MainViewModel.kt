@@ -619,22 +619,27 @@ class MainViewModel @JvmOverloads constructor(
         val state = _uiState.value
         if (state.isVowActive) {
             val currentTotalSeconds = state.days * 86400L + state.hours * 3600L + state.minutes * 60L + state.seconds
-            val newTotalSeconds = currentTotalSeconds + additionalSeconds
+            // Cap the running total at the ceiling. The wheels can't exceed it on their own, but
+            // repeated adds can — and the in-memory copy (not just the persisted one) must respect it,
+            // or the countdown would show >99d until a process restart snapped it back.
+            val requestedTotal = currentTotalSeconds + additionalSeconds
+            val newTotalSeconds = VowValidator.clampRemainingSeconds(requestedTotal)
+            val effectiveAddition = (newTotalSeconds - currentTotalSeconds).coerceAtLeast(0L)
             val d = (newTotalSeconds / 86400).toInt()
             val h = ((newTotalSeconds % 86400) / 3600).toInt()
             val m = ((newTotalSeconds % 3600) / 60).toInt()
             val s = (newTotalSeconds % 60).toInt()
-            
-            updateState { 
+
+            updateState {
                 copy(
                     days = d, hours = h, minutes = m, seconds = s,
-                    vowInitialDurationSeconds = vowInitialDurationSeconds + additionalSeconds
-                ) 
+                    vowInitialDurationSeconds = vowInitialDurationSeconds + effectiveAddition
+                )
             }
             viewModelScope.launch {
-                vowDataStore.saveCountdownState(newTotalSeconds, SystemClock.elapsedRealtime(), additionalSeconds)
+                vowDataStore.saveCountdownState(newTotalSeconds, SystemClock.elapsedRealtime(), effectiveAddition)
             }
-            showToast("Added time to the active Vow.")
+            showToast(if (newTotalSeconds < requestedTotal) "Vow capped at the 99-day maximum." else "Added time to the active Vow.")
             return null
         } else {
             val err = capabilities.assertBindingVow(
@@ -650,19 +655,22 @@ class MainViewModel @JvmOverloads constructor(
             if (err != null) {
                 return err
             }
-            val d = (additionalSeconds / 86400).toInt()
-            val h = ((additionalSeconds % 86400) / 3600).toInt()
-            val m = ((additionalSeconds % 3600) / 60).toInt()
-            val s = (additionalSeconds % 60).toInt()
-            
+            // Belt-and-braces: the dialog wheels already cap at the ceiling, but clamp anyway so no
+            // caller path can start a vow longer than MAX_VOW_SECONDS.
+            val clampedSeconds = VowValidator.clampRemainingSeconds(additionalSeconds)
+            val d = (clampedSeconds / 86400).toInt()
+            val h = ((clampedSeconds % 86400) / 3600).toInt()
+            val m = ((clampedSeconds % 3600) / 60).toInt()
+            val s = (clampedSeconds % 60).toInt()
+
             val startMs = System.currentTimeMillis()
-            updateState { 
+            updateState {
                 copy(
                     isVowActive = true,
                     currentState = ScreenState.LOCKED_VAULT,
                     days = d, hours = h, minutes = m, seconds = s,
                     vowStartTimeMs = startMs,
-                    vowInitialDurationSeconds = additionalSeconds,
+                    vowInitialDurationSeconds = clampedSeconds,
                     frozenAllowedValue = allowedValue,
                     frozenAllowedUnit = allowedUnit,
                     frozenInterval = selectedInterval,

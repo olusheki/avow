@@ -58,6 +58,9 @@ class DomainVpnService : VpnService() {
     private var worker: Thread? = null
     @Volatile private var running = false
     @Volatile private var bannedDomains: Set<String> = emptySet()
+    // onStartCommand runs on every app launch while the toggle is on; start the DataStore collector
+    // only once per service instance, or collectors stack for the life of the process.
+    @Volatile private var configCollectorStarted = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -66,10 +69,13 @@ class DomainVpnService : VpnService() {
             return START_NOT_STICKY
         }
         // Keep the banned-domain set current from the DataStore (the global BAN DOMAIN SET).
-        scope.launch {
-            VowDataStore(applicationContext).preferencesFlow.collect { prefs ->
-                bannedDomains = (prefs[VowDataStore.BAN_DOMAIN_SET] ?: emptySet())
-                    .map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+        if (!configCollectorStarted) {
+            configCollectorStarted = true
+            scope.launch {
+                VowDataStore(applicationContext).preferencesFlow.collect { prefs ->
+                    bannedDomains = (prefs[VowDataStore.BAN_DOMAIN_SET] ?: emptySet())
+                        .map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+                }
             }
         }
         if (!running) startTunnel()
