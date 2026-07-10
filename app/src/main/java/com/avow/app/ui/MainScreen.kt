@@ -3449,6 +3449,9 @@ fun BindingVowConfigDialog(
     var vowSeconds by remember { mutableStateOf(initialSeconds.toIntOrNull() ?: 0) }
     // Gate vows of a day or more behind a confirmation before inflicting.
     var showConfirm by remember { mutableStateOf(false) }
+    // Guard the confirm from a rapid double-tap, which otherwise fires onConfirm twice (doubling
+    // the added time on the add-time path).
+    var committing by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -3552,11 +3555,15 @@ fun BindingVowConfigDialog(
                         .fillMaxWidth()
                         .height(44.dp)
                         .background(if (isValid) MonospaceText else OutlineAccent)
-                        .clickable(enabled = isValid) {
+                        .clickable(enabled = isValid && !committing) {
                             // Vows of a day or more are a big, irreversible commitment — confirm
                             // those; shorter ones inflict immediately.
-                            if (totalSeconds >= 86400L) showConfirm = true
-                            else onConfirm(totalSeconds)
+                            if (totalSeconds >= 86400L) {
+                                showConfirm = true
+                            } else {
+                                committing = true
+                                onConfirm(totalSeconds)
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -3577,6 +3584,7 @@ fun BindingVowConfigDialog(
                         confirmLabel = if (isLockedState) "ADD IT" else "HOLD ME TO IT",
                         onConfirm = {
                             showConfirm = false
+                            committing = true
                             onConfirm(totalSeconds)
                         },
                         onDismiss = { showConfirm = false }
