@@ -1997,6 +1997,14 @@ fun IntrusionInterceptOverlay(
                     letterSpacing = 1.sp
                 )
             }
+            Spacer(modifier = Modifier.height(28.dp))
+            Text(
+                text = "Double-tap anywhere to close.",
+                color = SubtextGrey,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
