@@ -2786,6 +2786,13 @@ fun DoomscrollConfigDialog(
                             }
                         }
                     }
+
+                    Text(
+                        text = "Changes apply immediately.",
+                        color = SubtextGrey,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
             }
         }
 
