@@ -1728,7 +1728,14 @@ fun SettingsFooterSection() {
                 )
             } catch (e: Exception) { /* no email app */ }
         }
-        SettingsLinkRow("Support aVow (donate)", "coming soon") { /* TODO: external donation URL */ }
+        SettingsLinkRow("Support aVow (donate)", "buymeacoffee.com/avow") {
+            try {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://buymeacoffee.com/avow"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) { /* no browser */ }
+        }
         Text(
             text = "aVow v$versionName",
             color = SubtextGrey,
