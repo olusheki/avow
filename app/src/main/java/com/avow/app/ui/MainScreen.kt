@@ -911,6 +911,22 @@ fun VaultDashboard(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        // Enforcement is dead if the accessibility service is off (OEM battery kill, user action,
+        // a boot crash). Re-check on every resume so the dashboard never looks armed when it isn't.
+        val enforcementContext = LocalContext.current
+        val enforcementLifecycle = LocalLifecycleOwner.current
+        var accessRefresh by remember { mutableStateOf(0) }
+        DisposableEffect(enforcementLifecycle) {
+            val observer = LifecycleEventObserver { _, e ->
+                if (e == Lifecycle.Event.ON_RESUME) accessRefresh++
+            }
+            enforcementLifecycle.lifecycle.addObserver(observer)
+            onDispose { enforcementLifecycle.lifecycle.removeObserver(observer) }
+        }
+        val accessibilityOn = remember(accessRefresh) {
+            isAccessibilityServiceEnabled(enforcementContext, BlockerService::class.java)
+        }
+
         // 1. Top status bar layout (Stark header) with mascot + speech bubble
         var bubbleVisible by remember { mutableStateOf(false) }
         var bubbleMessage by remember { mutableStateOf("") }
@@ -1021,6 +1037,35 @@ fun VaultDashboard(
                 .height(1.dp)
                 .background(OutlineAccent)
         )
+
+        if (!accessibilityOn) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 12.dp)
+                    .background(MutedSurface)
+                    .sharpBorder(1.dp, LockedRed)
+                    .clickable {
+                        enforcementContext.startActivity(
+                            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "[ ENFORCEMENT OFFLINE — TAP TO FIX ]",
+                    color = LockedRed,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(36.dp))
 
