@@ -60,6 +60,16 @@ class PackageUsageCacheTest {
         return field.get(service)
     }
 
+    // Start of the current wall-clock hour — a stable same-hour anchor so isNewUsageInterval("hour")
+    // doesn't spuriously reset the cache mid-test (previously the interval start was `now`, which
+    // could straddle the top of the hour and clear the cache before the assertion).
+    private fun currentHourStartMillis(): Long =
+        java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
     private fun invokeUpdateUsageStatistics(context: CoroutineContext) {
         val method = BlockerService::class.java.getDeclaredMethod("updateUsageStatistics", Continuation::class.java)
         method.isAccessible = true
@@ -83,7 +93,7 @@ class PackageUsageCacheTest {
         setPrivateField("selectedInterval", "hour")
         setPrivateField("targetAppSet", setOf("com.instagram.android"))
         setPrivateField("currentForegroundPackage", "com.instagram.android")
-        setPrivateField("lastIntervalStartMs", System.currentTimeMillis())
+        setPrivateField("lastIntervalStartMs", currentHourStartMillis())
 
         val cache = getPrivateField("packageUsageCache") as ConcurrentHashMap<String, Long>
         cache.clear()
@@ -110,7 +120,7 @@ class PackageUsageCacheTest {
         setPrivateField("targetAppSet", setOf("com.instagram.android", "com.facebook.katana"))
         setPrivateField("currentForegroundPackage", "com.instagram.android")
         setPrivateField("lastTrackedPackage", "com.instagram.android")
-        setPrivateField("lastIntervalStartMs", System.currentTimeMillis())
+        setPrivateField("lastIntervalStartMs", currentHourStartMillis())
 
         val cache = getPrivateField("packageUsageCache") as ConcurrentHashMap<String, Long>
         cache["com.instagram.android"] = 5000L
@@ -136,7 +146,7 @@ class PackageUsageCacheTest {
         setPrivateField("targetAppSet", setOf("com.instagram.android"))
         setPrivateField("currentForegroundPackage", "com.instagram.android")
         setPrivateField("lastTrackedPackage", "com.instagram.android")
-        setPrivateField("lastIntervalStartMs", System.currentTimeMillis())
+        setPrivateField("lastIntervalStartMs", currentHourStartMillis())
 
         val cache = getPrivateField("packageUsageCache") as ConcurrentHashMap<String, Long>
         cache["com.instagram.android"] = 299000L
