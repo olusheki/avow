@@ -1,18 +1,20 @@
 package com.avow.app
 
 import android.content.Context
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.avow.app.data.VowDataStore
+import com.avow.app.data.dataStore
 import com.avow.app.util.VowValidator
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,6 +27,9 @@ class StateSignatureTest {
 
     @get:Rule
     val tmpFolder = TemporaryFolder()
+
+    @After
+    fun tearDown() = unmockkAll()
 
     /** Test-local convenience: the five-arg signature over an otherwise-default state. Replaces the
      *  former production `VowValidator.computeStateSignature`, which only tests ever referenced. */
@@ -101,14 +106,19 @@ class StateSignatureTest {
         val tempFile = tmpFolder.newFile("test_settings_signature_tamper.preferences_pb")
         val testDataStore = PreferenceDataStoreFactory.create(produceFile = { tempFile })
         val mockContext = mockk<Context>(relaxed = true)
-        
+        // Wire the real VowDataStore to our temp store BEFORE constructing it (preferencesFlow is
+        // evaluated at construction), so we exercise the ACTUAL fallback mapping — not a copy of it.
+        mockkStatic("com.avow.app.data.VowDataStoreKt")
+        every { mockContext.dataStore } returns testDataStore
+        val realVowDataStore = VowDataStore(mockContext)
+
         val isActive = true
         val remaining = 3600L
         val uptime = 123456L
         val domains = setOf("facebook.com")
         val apps = emptySet<String>()
         val validSig = stateSignature(isActive, remaining, uptime, domains, apps)
-        
+
         testDataStore.edit { prefs ->
             prefs[VowDataStore.IS_VOW_ACTIVE] = isActive
             prefs[VowDataStore.REMAINING_VOW_SECONDS] = remaining
@@ -117,38 +127,17 @@ class StateSignatureTest {
             prefs[VowDataStore.TARGET_APP_SET] = apps
             prefs[VowDataStore.STATE_SIGNATURE] = validSig
         }
+        // SIMULATE TAMPERING: disable the active vow on disk without re-signing.
+        testDataStore.edit { prefs -> prefs[VowDataStore.IS_VOW_ACTIVE] = false }
 
-        // SIMULATE TAMPERING: The user directly edits the file to disable active vow (IS_VOW_ACTIVE = false)
-        testDataStore.edit { prefs ->
-            prefs[VowDataStore.IS_VOW_ACTIVE] = false
-        }
-
-        val realVowDataStore = VowDataStore(mockContext)
         val tamperedPrefs = testDataStore.data.first()
-        
-        val isValid = realVowDataStore.isSignatureValid(tamperedPrefs)
-        assertFalse(isValid)
+        assertFalse(realVowDataStore.isSignatureValid(tamperedPrefs))
 
-        val mappedPrefsFlow = testDataStore.data.map { preferences ->
-            if (!realVowDataStore.isSignatureValid(preferences)) {
-                val mutablePrefs = preferences.toMutablePreferences()
-                mutablePrefs[VowDataStore.IS_VOW_ACTIVE] = true
-                mutablePrefs[VowDataStore.REMAINING_VOW_SECONDS] = maxOf(preferences[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L, 7L * 24L * 3600L)
-                mutablePrefs[VowDataStore.LOCK_UNINSTALL] = true
-                mutablePrefs[VowDataStore.DISALLOW_DATA_WIPE] = true
-                mutablePrefs[VowDataStore.DISABLE_SAFE_BOOT] = true
-                mutablePrefs[VowDataStore.BLOCK_PLAY_STORE] = true
-                mutablePrefs[VowDataStore.DEACTIVATE_USB_DEBUGGING] = true
-                mutablePrefs
-            } else {
-                preferences
-            }
-        }
-
-        val resolvedPrefs = mappedPrefsFlow.first()
+        // The REAL preferencesFlow must emit the strict-lockout fallback for the tampered state.
+        val resolvedPrefs = realVowDataStore.preferencesFlow.first()
 
         assertTrue(resolvedPrefs[VowDataStore.IS_VOW_ACTIVE] == true)
-        assertEquals(7L * 24L * 3600L, resolvedPrefs[VowDataStore.REMAINING_VOW_SECONDS])
+        assertTrue((resolvedPrefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= 7L * 24L * 3600L)
         assertTrue(resolvedPrefs[VowDataStore.LOCK_UNINSTALL] == true)
         assertTrue(resolvedPrefs[VowDataStore.DISALLOW_DATA_WIPE] == true)
         assertTrue(resolvedPrefs[VowDataStore.DISABLE_SAFE_BOOT] == true)

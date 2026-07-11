@@ -28,20 +28,10 @@ class BootReceiver : BroadcastReceiver() {
 
             val vowDataStore = VowDataStore(context.applicationContext)
             val pendingResult = goAsync()
-            
+
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val prefs = vowDataStore.preferencesFlow.first()
-                    val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
-                    Log.d("BootReceiver", "Checked DataStore. isVowActive: $isVowActive")
-
-                    // A doomscroll cooldown end time is elapsedRealtime-based and meaningless after a
-                    // reboot (uptime restarts near zero), so it would massively over-enforce. Clear it.
-                    if ((prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L) > 0L) {
-                        vowDataStore.saveTemporaryLockoutEndTime(0L)
-                    }
-                    
-                    if (isVowActive) {
+                    if (reconcileBootState(vowDataStore)) {
                         Log.d("BootReceiver", "Vow active, launching MainActivity")
                         val activityIntent = Intent(context, MainActivity::class.java).apply {
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -55,5 +45,22 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
         }
+    }
+
+    /**
+     * Boot-time DataStore reconciliation, split out of [onReceive] so it's unit-testable without the
+     * framework goAsync/registerReceiver plumbing. Clears the reboot-stale doomscroll cooldown (its
+     * end time is elapsedRealtime-based and meaningless once uptime restarts near zero, so it would
+     * massively over-enforce) and reports whether an active vow means MainActivity should relaunch.
+     */
+    internal suspend fun reconcileBootState(vowDataStore: VowDataStore): Boolean {
+        val prefs = vowDataStore.preferencesFlow.first()
+        val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
+        Log.d("BootReceiver", "Checked DataStore. isVowActive: $isVowActive")
+
+        if ((prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L) > 0L) {
+            vowDataStore.saveTemporaryLockoutEndTime(0L)
+        }
+        return isVowActive
     }
 }

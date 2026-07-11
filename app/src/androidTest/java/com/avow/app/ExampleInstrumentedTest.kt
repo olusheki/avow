@@ -17,8 +17,9 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test.
+        // Context of the app under test. The full flavor suffixes the id (com.avow.app.plus), so
+        // assert the shared prefix rather than a flavor-specific literal.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.avow.app", appContext.packageName)
+        assertTrue(appContext.packageName.startsWith("com.avow.app"))
     }
 }
