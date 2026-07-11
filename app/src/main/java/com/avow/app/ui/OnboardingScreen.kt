@@ -241,7 +241,7 @@ fun OnboardingFlow(
             }
             if (slideIndex < ONBOARDING_SLIDE_COUNT - 1) {
                 WarmCtaButton(
-                    text = if (slideIndex == 0) "[ BEGIN ]" else "CONTINUE",
+                    text = if (slideIndex == 0) "{ BEGIN }" else "CONTINUE",
                     enabled = !continueBlocked,
                     onClick = { if (!continueBlocked) slideIndex++ },
                     modifier = Modifier.weight(if (slideIndex == 0) 1f else 2f)

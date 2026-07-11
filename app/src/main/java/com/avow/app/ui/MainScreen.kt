@@ -90,9 +90,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 
-// Slightly darker gray color for activated panels
-val DarkerSurfaceColor = Color(0xFF5A5A5A)
-
 // Placeholder until the policy is hosted (task G-1); swap for the hosted URL then.
 private const val PRIVACY_POLICY_URL = "https://github.com/olusheki/avow/blob/main/PRIVACY_POLICY.md"
 
@@ -1126,13 +1123,13 @@ fun VaultDashboard(
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MonospaceText,
-                    activeContentColor = Color(0xFF1C1C1C),
+                    activeContentColor = InkText,
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
                     inactiveBorderColor = OutlineAccent,
                     disabledActiveContainerColor = MonospaceText,
-                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledActiveContentColor = InkText,
                     disabledInactiveContainerColor = Color.Transparent,
                     disabledInactiveContentColor = SubtextGrey,
                     disabledActiveBorderColor = OutlineAccent,
@@ -1142,9 +1139,9 @@ fun VaultDashboard(
                 Text(
                     text = "PASSIVE VOW",
                     color = if (bindingVowActivated) {
-                        if (!isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                        if (!isActiveVowMode) InkText else SubtextGrey
                     } else {
-                        if (!isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                        if (!isActiveVowMode) InkText else MonospaceText
                     },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -1159,13 +1156,13 @@ fun VaultDashboard(
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MonospaceText,
-                    activeContentColor = Color(0xFF1C1C1C),
+                    activeContentColor = InkText,
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
                     inactiveBorderColor = OutlineAccent,
                     disabledActiveContainerColor = MonospaceText,
-                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledActiveContentColor = InkText,
                     disabledInactiveContainerColor = Color.Transparent,
                     disabledInactiveContentColor = SubtextGrey,
                     disabledActiveBorderColor = OutlineAccent,
@@ -1175,9 +1172,9 @@ fun VaultDashboard(
                 Text(
                     text = "ACTIVE VOW",
                     color = if (bindingVowActivated) {
-                        if (isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                        if (isActiveVowMode) InkText else SubtextGrey
                     } else {
-                        if (isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                        if (isActiveVowMode) InkText else MonospaceText
                     },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -2551,7 +2548,7 @@ fun UsageLimitsConfigDialog(
                 ) {
                     Text(
                         text = "UPDATE",
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -2921,7 +2918,7 @@ fun DialTimePickerDialog(
                 periodSelectorSelectedContainerColor = Color(0xFF2E2E2E), // Darker when selected
                 periodSelectorUnselectedContainerColor = MutedSurface, // Lighter when unselected
                 periodSelectorSelectedContentColor = MonospaceText, // White text on dark selected container
-                periodSelectorUnselectedContentColor = Color(0xFF1C1C1C), // Dark text on light unselected container
+                periodSelectorUnselectedContentColor = InkText, // Dark text on light unselected container
                 timeSelectorSelectedContainerColor = MutedSurface,
                 timeSelectorUnselectedContainerColor = MutedSurface,
                 timeSelectorSelectedContentColor = MonospaceText,
@@ -3389,7 +3386,7 @@ fun QuietHoursConfigDialog(
                 ) {
                     Text(
                         text = "UPDATE",
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -3742,7 +3739,7 @@ fun ConfirmDialog(
                 ) {
                     Text(
                         text = confirmLabel,
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
