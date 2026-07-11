@@ -16,6 +16,12 @@
     <string name="vpn_title">aVow — domain filter active</string>
     <string name="vpn_text">Blocking your restricted sites in every browser.</string>
 
+    <!-- Tamper / key-loss softened lockout notification (BlockerService, D-3) -->
+    <string name="tamper_channel_name">Security</string>
+    <string name="tamper_channel_description">Alerts when aVow\'s security anchor changes.</string>
+    <string name="tamper_title">aVow security check</string>
+    <string name="tamper_text">Your device\'s security key changed — this often happens after a system update. As a precaution, a 24-hour vow is active. It will lift on its own; no action needed.</string>
+
     <!-- Doomscroll warning notification (BlockerService) -->
     <string name="doomscroll_warning_channel_name">Doomscroll Warning</string>
     <string name="doomscroll_warning_channel_description">Notifies when the time limit in a target app is nearly reached</string>

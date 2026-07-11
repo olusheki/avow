@@ -22,7 +22,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /** Covers [VowDataStore.repairTamperedStateIfNeeded] (W1-T5): a tampered signature must be repaired
- *  to the strict lockout AND persisted to disk, and a valid state must be left untouched. */
+ *  to the softened 24h lockout AND persisted to disk, and a valid state must be left untouched. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TamperRepairTest {
 
@@ -55,11 +55,11 @@ class TamperRepairTest {
         // WHEN: the repair runs.
         vowDataStore.repairTamperedStateIfNeeded()
 
-        // THEN: the strict lockout is persisted and the signature is now valid.
+        // THEN: the softened 24h lockout (D-3) is persisted and the signature is now valid.
         val prefs = testDataStore.data.first()
         assertTrue(prefs[VowDataStore.IS_VOW_ACTIVE] ?: false)
         assertTrue(prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false)
-        assertTrue((prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= 7L * 24L * 3600L)
+        assertTrue((prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= VowDataStore.TAMPER_LOCKOUT_SECONDS)
         assertTrue(prefs[VowDataStore.BLOCK_PLAY_STORE] ?: false)
         assertTrue(vowDataStore.isSignatureValid(prefs))
     }

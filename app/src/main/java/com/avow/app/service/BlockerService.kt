@@ -176,9 +176,15 @@ class BlockerService : AccessibilityService() {
         }
         registerReceiver(userPresentReceiver, presenceFilter)
 
-        // Persist the strict-lockout fallback if the signed state was tampered with (the read flow
-        // only corrects it in memory otherwise). The service is the boot-time enforcement anchor.
-        serviceScope.launch { vowDataStore.repairTamperedStateIfNeeded() }
+        // Persist the softened tamper/key-loss fallback if the signed state didn't verify (the read
+        // flow only corrects it in memory otherwise). The service is the boot-time enforcement anchor.
+        // When it actually applies (once per detection), tell the user why so a blameless key
+        // invalidation isn't a silent, unexplained lockout.
+        serviceScope.launch {
+            if (vowDataStore.repairTamperedStateIfNeeded()) {
+                showTamperLockoutNotification()
+            }
+        }
 
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
@@ -672,6 +678,46 @@ class BlockerService : AccessibilityService() {
             }
             else -> {}
         }
+    }
+
+    /**
+     * High-importance, heads-up notification shown once when the softened tamper/key-loss lockout is
+     * applied (D-3). Worded for the innocent case (an OS update can invalidate the security key) so a
+     * blameless user understands the 24h vow and that it lifts on its own.
+     */
+    private fun showTamperLockoutNotification() {
+        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "tamper_lockout_channel"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                getString(com.avow.app.R.string.tamper_channel_name),
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = getString(com.avow.app.R.string.tamper_channel_description)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 1003, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val text = getString(com.avow.app.R.string.tamper_text)
+        val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setContentTitle(getString(com.avow.app.R.string.tamper_title))
+            .setContentText(text)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+        com.avow.app.util.NotificationStyle.applyBranding(builder, this)
+
+        notificationManager.notify(2003, builder.build())
     }
 
     private fun showWarningNotification() {
