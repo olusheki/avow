@@ -271,4 +271,38 @@ class SessionLoggingTest {
         val zenExtremePickups = VowValidator.calculateZenScore(pickups = 20, allowedScreenTimeMs = 0L, durationSeconds = 3600L)
         assertEquals(0, zenExtremePickups)
     }
+
+    /**
+     * Regression guard: clearing a completed vow must wipe only the transient session state and
+     * preserve the user's standing config — the Passive/Active preference, the doomscroll shield
+     * and its targets, the scheduled blocks, and any in-flight doomscroll cooldown. A past bug
+     * silently wiped all of these after every vow.
+     */
+    @Test
+    fun testClearVowConfigPreservesUserConfig() = runTest {
+        coEvery { mockDao.insert(any()) } just Runs
+
+        testDataStore.edit { p ->
+            p[VowDataStore.IS_VOW_ACTIVE] = true
+            p[VowDataStore.IS_ACTIVE_VOW_MODE] = true
+            p[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] = true
+            p[VowDataStore.DOOMSCROLL_TARGET_APP_SET] = setOf("com.instagram.android")
+            p[VowDataStore.VOW_BLOCKS_JSON] = "id1=Night=true=22=0=7=0=com.x="
+            p[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] = 999999L
+            p[VowDataStore.VOW_START_TIME_MS] = System.currentTimeMillis() - 1000L
+        }
+
+        vowDataStore.clearVowConfig()
+
+        val p = testDataStore.data.first()
+        // Transient vow state is cleared.
+        assertFalse(p[VowDataStore.IS_VOW_ACTIVE] ?: true)
+        assertEquals(0L, p[VowDataStore.VOW_START_TIME_MS] ?: -1L)
+        // Standing config + the doomscroll cooldown survive.
+        assertTrue(p[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false)
+        assertTrue(p[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false)
+        assertEquals(setOf("com.instagram.android"), p[VowDataStore.DOOMSCROLL_TARGET_APP_SET])
+        assertEquals("id1=Night=true=22=0=7=0=com.x=", p[VowDataStore.VOW_BLOCKS_JSON])
+        assertEquals(999999L, p[VowDataStore.TEMPORARY_LOCKOUT_END_TIME])
+    }
 }
