@@ -35,6 +35,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import java.util.Locale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -696,7 +699,7 @@ fun SmileyFaceOutline(
     color: Color = OutlineAccent,
     mouthOpen: Boolean = false
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(modifier = modifier.semantics { contentDescription = "aVow mascot — tap for a message" }) {
         val minDim = size.minDimension
         val scale = minDim / 200f
         val strokeWidth = 4f * scale
@@ -1353,7 +1356,7 @@ fun DashboardPanelButton(
                     Modifier.dashedBorder(1.dp, OutlineAccent)
                 }
             )
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1383,7 +1386,7 @@ fun SharpBorderButton(
         modifier = modifier
             .height(48.dp)
             .sharpBorder(1.dp, OutlineAccent)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
