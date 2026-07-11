@@ -31,6 +31,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import android.os.SystemClock
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.viewModelScope
@@ -213,6 +214,43 @@ class MainViewModelTest {
             s = vm.uiState.value
             val total = s.days * 86400L + s.hours * 3600L + s.minutes * 60L + s.seconds
             assertEquals(VowValidator.MAX_VOW_SECONDS, total)
+        } finally {
+            clearViewModel(vm)
+        }
+    }
+
+    @Test
+    fun ticker_reachingZero_liftsRestrictionsAndUnlocksVault() = runTest(testDispatcher) {
+        // The countdown ticker reads SystemClock.elapsedRealtime(), which is a constant 0 in unit
+        // tests. Drive a controllable clock so a live vow can actually run down to zero on screen —
+        // a different expiry trigger than the load-path expiry (expiredVowOnLoad_liftsRestrictions).
+        var clock = 0L
+        mockkStatic(SystemClock::class)
+        every { SystemClock.elapsedRealtime() } answers { clock }
+
+        val caps = RecordingCapabilities()
+        val vm = buildRealViewModel(caps, "vm_ticker.preferences_pb")
+        try {
+            // Waiting for isLoaded lets the ticker coroutine start and capture lastCheckUptime at 0.
+            vm.uiState.first { it.isLoaded }
+            vm.addBindingTime(2L) // 2-second vow
+            assertTrue(vm.uiState.value.isVowActive)
+
+            // Flush pending work so the ticker parks at its first delay with lastCheckUptime = 0
+            // (DataStore load runs on a real IO thread, so without this the clock bump below can
+            // race ahead of that capture and the ticker never decrements).
+            testScheduler.runCurrent()
+
+            // Jump the clock well past the 2s remaining, then let a ticker iteration fire.
+            clock = 5_000L
+            testScheduler.advanceTimeBy(5_000L)
+            testScheduler.runCurrent()
+
+            val s = vm.uiState.value
+            assertFalse(s.isVowActive)
+            assertEquals(ScreenState.UNLOCKED_VAULT, s.currentState)
+            // locks engaged on inflict (true) then released on expiry (false)
+            assertTrue(caps.assertActivations.contains(false))
         } finally {
             clearViewModel(vm)
         }
