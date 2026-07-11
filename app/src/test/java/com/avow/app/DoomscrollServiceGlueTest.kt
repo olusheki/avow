@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -115,6 +116,32 @@ class DoomscrollServiceGlueTest {
         val endTime = getField("temporaryLockoutEndTime") as Long
         assertTrue("expected a cooldown end time to be stamped, was $endTime", endTime > 0L)
         verify(exactly = 1) { service.startActivity(any()) } // lockout overlay launched
+    }
+
+    @Test
+    fun doomscrollSeed_appliesDiskValueOnce_ignoresLaterStaleEmissions() {
+        val tracker = getField("doomscrollTracker") as DoomscrollTracker
+
+        // First emission seeds the live counter from disk.
+        service.applyDoomscrollSeed(diskAccumulatedMs = 45_000L, shieldEnabled = true)
+        assertEquals(45_000L, tracker.accumulatedMs)
+
+        // The live counter advances past disk as the user keeps scrolling.
+        tracker.accumulatedMs = 58_000L
+
+        // A later emission carrying a stale (lower) disk value must NOT snap the live counter back —
+        // that snap-back was the unreliable-lockout root cause.
+        service.applyDoomscrollSeed(diskAccumulatedMs = 10_000L, shieldEnabled = true)
+        assertEquals(58_000L, tracker.accumulatedMs)
+    }
+
+    @Test
+    fun doomscrollSeed_shieldDisabled_resetsCounter() {
+        val tracker = getField("doomscrollTracker") as DoomscrollTracker
+        tracker.accumulatedMs = 30_000L
+
+        service.applyDoomscrollSeed(diskAccumulatedMs = 30_000L, shieldEnabled = false)
+        assertEquals(0L, tracker.accumulatedMs)
     }
 
     private fun invokeUpdateDoomscrollStatistics(context: CoroutineContext) {

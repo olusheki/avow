@@ -148,6 +148,24 @@ class BlockerService : AccessibilityService() {
      */
     private val isEnforcementActive: Boolean get() = isVowActive || isActiveVowMode
  
+    /**
+     * Seeds the live doomscroll counter from the persisted value on the FIRST emission only. Split
+     * out of the onCreate collector so it's unit-testable. Re-applying on later emissions raced the
+     * async per-tick saves and snapped the live counter back to stale values (the unreliable-lockout
+     * root cause). Disabling the shield resets the counter.
+     */
+    @Synchronized
+    internal fun applyDoomscrollSeed(diskAccumulatedMs: Long, shieldEnabled: Boolean) {
+        if (!doomscrollTrackerSeeded) {
+            doomscrollTracker.accumulatedMs = diskAccumulatedMs
+            doomscrollTrackerSeeded = true
+        }
+        if (!shieldEnabled) {
+            doomscrollTracker.accumulatedMs = 0L
+            doomscrollTracker.warningSent = false
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
@@ -204,17 +222,7 @@ class BlockerService : AccessibilityService() {
                 doomscrollTargetApps = prefs[VowDataStore.DOOMSCROLL_TARGET_APP_SET] ?: emptySet()
                 doomscrollCooldownMinutes = prefs[VowDataStore.DOOMSCROLL_COOLDOWN_MINUTES] ?: 60
                 doomscrollAllowanceMinutes = prefs[VowDataStore.DOOMSCROLL_ALLOWANCE_MINUTES] ?: 15
-                // Seed the tracker from disk exactly once (service restart). Re-applying every
-                // emission raced with the async per-tick saves and snapped the live counter back
-                // to stale values — the root cause of the unreliable lockout.
-                if (!doomscrollTrackerSeeded) {
-                    doomscrollTracker.accumulatedMs = doomscrollAccumulatedMs
-                    doomscrollTrackerSeeded = true
-                }
-                if (!doomscrollShieldEnabled) {
-                    doomscrollTracker.accumulatedMs = 0L
-                    doomscrollTracker.warningSent = false
-                }
+                applyDoomscrollSeed(doomscrollAccumulatedMs, doomscrollShieldEnabled)
                 val blocksJson = prefs[VowDataStore.VOW_BLOCKS_JSON] ?: ""
                 vowBlocks = VowBlock.deserializeList(blocksJson)
 
