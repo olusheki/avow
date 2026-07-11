@@ -11,8 +11,18 @@ class VowDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS vow_sessions")
-        onCreate(db)
+        // NEVER drop-and-recreate here — that wipes every user's focus history on a version bump.
+        // Migrations must be additive (ALTER TABLE / CREATE TABLE IF NOT EXISTS) and step one version
+        // at a time so an upgrade spanning several versions composes correctly.
+        var version = oldVersion
+        while (version < newVersion) {
+            when (version) {
+                // 1 -> 2: legacy dev-only schema; ensure the table exists without touching data.
+                1 -> db.execSQL(CREATE_TABLE_SESSIONS)
+                // 2 -> 3 (future): db.execSQL("ALTER TABLE vow_sessions ADD COLUMN newCol ...")
+            }
+            version++
+        }
     }
 
     companion object {
@@ -20,7 +30,7 @@ class VowDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         const val DATABASE_VERSION = 2
 
         private const val CREATE_TABLE_SESSIONS = """
-            CREATE TABLE vow_sessions (
+            CREATE TABLE IF NOT EXISTS vow_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 startTimeMillis INTEGER NOT NULL,
                 endTimeMillis INTEGER NOT NULL,
