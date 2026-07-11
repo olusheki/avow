@@ -680,10 +680,10 @@ class BlockerService : AccessibilityService() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
                 channelId,
-                "Doomscroll Warning",
+                getString(com.avow.app.R.string.doomscroll_warning_channel_name),
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifies when the time limit in a target app is nearly reached"
+                description = getString(com.avow.app.R.string.doomscroll_warning_channel_description)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -700,8 +700,8 @@ class BlockerService : AccessibilityService() {
         )
 
         val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Doomscroll Warning")
-            .setContentText("You've spent a while in here. Tap to bind a 15-minute vow.")
+            .setContentTitle(getString(com.avow.app.R.string.doomscroll_warning_title))
+            .setContentText(getString(com.avow.app.R.string.doomscroll_warning_text))
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)

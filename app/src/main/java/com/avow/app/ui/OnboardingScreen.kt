@@ -42,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.avow.app.service.BlockerService
 import com.avow.app.ui.theme.*
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 private const val ONBOARDING_SLIDE_COUNT = 6
@@ -131,7 +132,7 @@ fun OnboardingFlow(
                 letterSpacing = 2.sp
             )
             Text(
-                text = String.format("%02d / %02d", slideIndex + 1, ONBOARDING_SLIDE_COUNT),
+                text = String.format(Locale.US, "%02d / %02d", slideIndex + 1, ONBOARDING_SLIDE_COUNT),
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
@@ -995,7 +996,7 @@ private fun WarmCtaButton(
 
 /* ----------------------------- Helpers ----------------------------- */
 
-private fun formatHours(hours: Float): String = String.format("%.1fh", hours)
+private fun formatHours(hours: Float): String = String.format(Locale.US, "%.1fh", hours)
 
 private fun comparePitch(estimate: Float, reality: Float?): String {
     if (reality == null) {

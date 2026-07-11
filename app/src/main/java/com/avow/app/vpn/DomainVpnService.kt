@@ -191,8 +191,8 @@ class DomainVpnService : VpnService() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Domain filter", NotificationManager.IMPORTANCE_LOW)
-                    .apply { description = "Blocks the websites you chose, in every browser." }
+                NotificationChannel(CHANNEL_ID, getString(R.string.vpn_channel_name), NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = getString(R.string.vpn_channel_description) }
             )
         }
         val pi = android.app.PendingIntent.getActivity(
@@ -201,8 +201,8 @@ class DomainVpnService : VpnService() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("aVow — domain filter active")
-            .setContentText("Blocking your restricted sites in every browser.")
+            .setContentTitle(getString(R.string.vpn_title))
+            .setContentText(getString(R.string.vpn_text))
             .setOngoing(true)
             .setContentIntent(pi)
             .build()
