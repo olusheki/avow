@@ -1,5 +1,12 @@
 package com.avow.app.util
 
+/**
+ * Leaky-bucket accounting for doomscroll time. [tick] is called once per second while a target app
+ * is foreground and adds 1s to the bucket; hitting the allowance trips a lockout and empties it.
+ * Leaving and re-entering the target drains the bucket by the time spent away ([handleForegroundChange]),
+ * so short breaks earn back allowance. This class is pure in-memory state — the caller (BlockerService)
+ * owns persistence of [accumulatedMs] and seeding it back on restart.
+ */
 class DoomscrollTracker {
     var accumulatedMs: Long = 0L
     var warningSent: Boolean = false

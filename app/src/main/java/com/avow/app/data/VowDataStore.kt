@@ -51,6 +51,9 @@ class VowDataStore(private val context: Context) {
         val STATE_SIGNATURE = stringPreferencesKey("state_signature")
         val DOOMSCROLL_LAST_CLOSED_TIME = longPreferencesKey("doomscroll_last_closed_time")
         val DOOMSCROLL_ACCUMULATED_MS = longPreferencesKey("doomscroll_accumulated_ms")
+        // elapsedRealtime()-based (uptime since boot), NOT wall-clock — so it's meaningless after a
+        // reboot (uptime restarts near zero) and BootReceiver clears it. Read/enforced across
+        // BlockerService, MainViewModel, and BootReceiver; keep all comparisons on elapsedRealtime.
         val TEMPORARY_LOCKOUT_END_TIME = longPreferencesKey("temporary_lockout_end_time")
         val VOW_START_TIME_MS = longPreferencesKey("vow_start_time_ms")
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")

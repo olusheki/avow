@@ -4,16 +4,18 @@ import com.avow.app.model.VowBlock
 
 enum class ScreenState {
     ONBOARDING,
-    UNLOCKED_VAULT,
-    LOCKED_VAULT,
-    CONFIGURATION,
-    INTRUSION_INTERCEPT,
-    TEMPORARY_LOCKOUT,
+    UNLOCKED_VAULT,      // no vow running: rules are idle, vault open
+    LOCKED_VAULT,        // vow running: the normal in-vow dashboard
+    CONFIGURATION,       // editing blocks / limits / doomscroll settings
+    INTRUSION_INTERCEPT, // a vow *block* fired — user opened a blocked app/setting during a vow
+    TEMPORARY_LOCKOUT,   // a doomscroll *cooldown* is active (distinct from INTRUSION_INTERCEPT)
     FOCUS_HISTORY
 }
 
 data class MainUiState(
     val currentState: ScreenState = ScreenState.UNLOCKED_VAULT,
+    // The screen to return to when an overlay (intercept / lockout) is dismissed. Never set to the
+    // overlay itself (see setScreenState), or the exit gesture would bounce straight back into it.
     val previousState: ScreenState = ScreenState.UNLOCKED_VAULT,
     val interceptReason: String? = null,
     val isVowActive: Boolean = false,
@@ -32,6 +34,9 @@ data class MainUiState(
     val specificDomain: String = "",
     val isCollectiveLimit: Boolean = false,
 
+    // frozen* = the config snapshot captured at vow-inflict time. During a vow, edits are validated
+    // as stricter-only against these baselines (you can tighten a running vow, never loosen it), so
+    // they must reflect the config as it was locked in, not the live values above.
     val frozenAllowedValue: String = "5",
     val frozenAllowedUnit: String = "min",
     val frozenInterval: String = "hour",

@@ -21,6 +21,9 @@ class DeviceAdmin : DeviceAdminReceiver() {
         /**
          * Asserts the ironclad system locks during an active binding vow.
          * Eliminates delete/redownload loops and closes Secure Folder backdoors.
+         *
+         * Returns null on success — and also, by design, when Device Admin is inactive: that's a
+         * silent no-op (accessibility-only mode), not an error. A non-null return is an error string.
          */
         fun assertBindingVow(
             context: Context,
