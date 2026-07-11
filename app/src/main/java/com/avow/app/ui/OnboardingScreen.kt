@@ -25,6 +25,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -61,23 +62,25 @@ fun OnboardingFlow(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    var slideIndex by remember { mutableStateOf(0) }
+    // Saveable so a config change (foldables ignore the portrait lock) or process death doesn't
+    // restart onboarding from slide 0.
+    var slideIndex by rememberSaveable { mutableStateOf(0) }
 
     // Shown before we ever send the user to enable the accessibility service (Play prominent-
     // disclosure requirement): the user must affirmatively consent first.
-    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showAccessibilityDisclosure by rememberSaveable { mutableStateOf(false) }
 
     // Slide 2 local state.
-    var estimateHours by remember { mutableStateOf(2f) }
-    var realityHours by remember { mutableStateOf<Float?>(null) }
+    var estimateHours by rememberSaveable { mutableStateOf(2f) }
+    var realityHours by rememberSaveable { mutableStateOf<Float?>(null) }
 
     // Apps chosen on the apps & domains slide; seeded into the default quiet-hours block on finish.
     var selectedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // Final slide: one-tap recommended config + the first-vow duration picker.
-    var recommendedApplied by remember { mutableStateOf(false) }
-    var vowHours by remember { mutableStateOf(1) }
-    var vowMinutes by remember { mutableStateOf(0) }
+    var recommendedApplied by rememberSaveable { mutableStateOf(false) }
+    var vowHours by rememberSaveable { mutableStateOf(1) }
+    var vowMinutes by rememberSaveable { mutableStateOf(0) }
 
     // Live permission status — recomputed whenever the app returns from a settings screen.
     var permissionRefresh by remember { mutableStateOf(0) }
