@@ -316,8 +316,14 @@ class VowDataStore(private val context: Context) {
     /** The softened tamper/key-loss fallback state (D-3): a 24h vow floor + the protective locks. */
     private fun applyTamperLockout(prefs: MutablePreferences) {
         prefs[IS_VOW_ACTIVE] = true
-        prefs[IS_ACTIVE_VOW_MODE] = true
+        // Deliberately NOT forcing IS_ACTIVE_VOW_MODE: the 24h vow floor alone makes enforcement
+        // active for the window, and clearVowConfig preserves Active mode — so forcing it here would
+        // strand a blameless user (an OS update can invalidate the key) in permanent Active mode
+        // after the lockout lifts.
         prefs[REMAINING_VOW_SECONDS] = maxOf(prefs[REMAINING_VOW_SECONDS] ?: 0L, TAMPER_LOCKOUT_SECONDS)
+        // Anchor the countdown to NOW, or the "24h" is measured against a stale uptime and can read
+        // as already-elapsed (instant, toothless expiry) or otherwise mis-count.
+        prefs[LAST_SYSTEM_UPTIME_MILLIS] = android.os.SystemClock.elapsedRealtime()
         prefs[SECURE_FOLDER_ENABLED] = true
         prefs[PRIVATE_SPACE_ENABLED] = true
         prefs[LOCK_UNINSTALL] = true
