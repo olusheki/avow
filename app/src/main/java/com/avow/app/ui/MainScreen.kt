@@ -33,7 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import java.util.Locale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -90,16 +94,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 
-// Slightly darker gray color for activated panels
-val DarkerSurfaceColor = Color(0xFF5A5A5A)
-
 // Placeholder until the policy is hosted (task G-1); swap for the hosted URL then.
 private const val PRIVACY_POLICY_URL = "https://github.com/olusheki/avow/blob/main/PRIVACY_POLICY.md"
 
 fun formatTimeAmPm(hour: Int, minute: Int): String {
     val displayHour = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
-    return String.format("%02d:%02d %s", displayHour, minute, amPm)
+    return String.format(Locale.US, "%02d:%02d %s", displayHour, minute, amPm)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -660,7 +661,7 @@ fun TemporaryLockoutOverlay(
             if (remainingSec > 0L) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60),
+                    text = String.format(Locale.US, "%02d:%02d", remainingSec / 60, remainingSec % 60),
                     color = MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 34.sp
@@ -698,7 +699,7 @@ fun SmileyFaceOutline(
     color: Color = OutlineAccent,
     mouthOpen: Boolean = false
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(modifier = modifier.semantics { contentDescription = "aVow mascot — tap for a message" }) {
         val minDim = size.minDimension
         val scale = minDim / 200f
         val strokeWidth = 4f * scale
@@ -1094,7 +1095,7 @@ fun VaultDashboard(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val formatNum = { num: Int -> String.format("%02d", num) }
+            val formatNum = { num: Int -> String.format(Locale.US, "%02d", num) }
             
             ClockDigitColumn(digit = formatNum(days), label = "DD")
             ClockSeparator()
@@ -1126,13 +1127,13 @@ fun VaultDashboard(
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MonospaceText,
-                    activeContentColor = Color(0xFF1C1C1C),
+                    activeContentColor = InkText,
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
                     inactiveBorderColor = OutlineAccent,
                     disabledActiveContainerColor = MonospaceText,
-                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledActiveContentColor = InkText,
                     disabledInactiveContainerColor = Color.Transparent,
                     disabledInactiveContentColor = SubtextGrey,
                     disabledActiveBorderColor = OutlineAccent,
@@ -1142,9 +1143,9 @@ fun VaultDashboard(
                 Text(
                     text = "PASSIVE VOW",
                     color = if (bindingVowActivated) {
-                        if (!isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                        if (!isActiveVowMode) InkText else SubtextGrey
                     } else {
-                        if (!isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                        if (!isActiveVowMode) InkText else MonospaceText
                     },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -1159,13 +1160,13 @@ fun VaultDashboard(
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MonospaceText,
-                    activeContentColor = Color(0xFF1C1C1C),
+                    activeContentColor = InkText,
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MonospaceText,
                     activeBorderColor = OutlineAccent,
                     inactiveBorderColor = OutlineAccent,
                     disabledActiveContainerColor = MonospaceText,
-                    disabledActiveContentColor = Color(0xFF1C1C1C),
+                    disabledActiveContentColor = InkText,
                     disabledInactiveContainerColor = Color.Transparent,
                     disabledInactiveContentColor = SubtextGrey,
                     disabledActiveBorderColor = OutlineAccent,
@@ -1175,9 +1176,9 @@ fun VaultDashboard(
                 Text(
                     text = "ACTIVE VOW",
                     color = if (bindingVowActivated) {
-                        if (isActiveVowMode) Color(0xFF1C1C1C) else SubtextGrey
+                        if (isActiveVowMode) InkText else SubtextGrey
                     } else {
-                        if (isActiveVowMode) Color(0xFF1C1C1C) else MonospaceText
+                        if (isActiveVowMode) InkText else MonospaceText
                     },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -1355,7 +1356,7 @@ fun DashboardPanelButton(
                     Modifier.dashedBorder(1.dp, OutlineAccent)
                 }
             )
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1385,7 +1386,7 @@ fun SharpBorderButton(
         modifier = modifier
             .height(48.dp)
             .sharpBorder(1.dp, OutlineAccent)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -1627,7 +1628,7 @@ fun ConfigurationWorkspace(
                         val hoursLeft = remainingMs / (3600L * 1000L)
                         val minsLeft = (remainingMs % (3600L * 1000L)) / (60L * 1000L)
                         val secsLeft = (remainingMs % (60L * 1000L)) / 1000L
-                        "{ COOLING OFF: ${String.format("%02d:%02d:%02d", hoursLeft, minsLeft, secsLeft)} }"
+                        "{ COOLING OFF: ${String.format(Locale.US, "%02d:%02d:%02d", hoursLeft, minsLeft, secsLeft)} }"
                     } else {
                         "{ DEACTIVATE DEVICE OWNER }"
                     }
@@ -2053,7 +2054,7 @@ fun IntrusionInterceptOverlay(
             if (isVowActive && (days + hours + minutes + seconds) > 0) {
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = "VOW ${String.format("%02d:%02d:%02d:%02d", days, hours, minutes, seconds)}",
+                    text = "VOW ${String.format(Locale.US, "%02d:%02d:%02d:%02d", days, hours, minutes, seconds)}",
                     color = MonospaceText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 15.sp,
@@ -2551,7 +2552,7 @@ fun UsageLimitsConfigDialog(
                 ) {
                     Text(
                         text = "UPDATE",
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -2921,7 +2922,7 @@ fun DialTimePickerDialog(
                 periodSelectorSelectedContainerColor = Color(0xFF2E2E2E), // Darker when selected
                 periodSelectorUnselectedContainerColor = MutedSurface, // Lighter when unselected
                 periodSelectorSelectedContentColor = MonospaceText, // White text on dark selected container
-                periodSelectorUnselectedContentColor = Color(0xFF1C1C1C), // Dark text on light unselected container
+                periodSelectorUnselectedContentColor = InkText, // Dark text on light unselected container
                 timeSelectorSelectedContainerColor = MutedSurface,
                 timeSelectorUnselectedContainerColor = MutedSurface,
                 timeSelectorSelectedContentColor = MonospaceText,
@@ -3389,7 +3390,7 @@ fun QuietHoursConfigDialog(
                 ) {
                     Text(
                         text = "UPDATE",
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -3495,7 +3496,7 @@ fun WheelNumberPicker(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = String.format("%02d", itemValue),
+                        text = String.format(Locale.US, "%02d", itemValue),
                         color = if (isSelected) MonospaceText else SubtextGrey,
                         fontFamily = FontFamily.Monospace,
                         fontSize = if (isSelected) 18.sp else 14.sp,
@@ -3679,8 +3680,8 @@ fun formatVowDuration(totalSeconds: Long): String {
     val h = (totalSeconds % 86400) / 3600
     val m = (totalSeconds % 3600) / 60
     val s = totalSeconds % 60
-    return if (d > 0) String.format("%dd %02d:%02d:%02d", d, h, m, s)
-    else String.format("%02d:%02d:%02d", h, m, s)
+    return if (d > 0) String.format(Locale.US, "%dd %02d:%02d:%02d", d, h, m, s)
+    else String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
 }
 
 /**
@@ -3742,7 +3743,7 @@ fun ConfirmDialog(
                 ) {
                     Text(
                         text = confirmLabel,
-                        color = Color(0xFF1C1C1C),
+                        color = InkText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,

@@ -2,6 +2,7 @@ package com.avow.app.data
 
 import android.content.Context
 import android.os.UserManager
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,6 +17,13 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vo
 class VowDataStore(private val context: Context) {
 
     companion object {
+        private const val TAG = "VowDataStore"
+
+        // D-3: an invalid signature can be innocent (an OS update / security event invalidating the
+        // AndroidKeyStore key), which is indistinguishable from real tampering. First detection now
+        // applies a *softened* 24h lockout instead of the former 7-day one, plus a clear notification.
+        const val TAMPER_LOCKOUT_SECONDS = 24L * 3600L
+
         val IS_VOW_ACTIVE = booleanPreferencesKey("is_vow_active")
         val IS_ACTIVE_VOW_MODE = booleanPreferencesKey("is_active_vow_mode")
         val DEACTIVATION_REQUEST_TIME = longPreferencesKey("deactivation_request_time")
@@ -51,6 +59,9 @@ class VowDataStore(private val context: Context) {
         val STATE_SIGNATURE = stringPreferencesKey("state_signature")
         val DOOMSCROLL_LAST_CLOSED_TIME = longPreferencesKey("doomscroll_last_closed_time")
         val DOOMSCROLL_ACCUMULATED_MS = longPreferencesKey("doomscroll_accumulated_ms")
+        // elapsedRealtime()-based (uptime since boot), NOT wall-clock — so it's meaningless after a
+        // reboot (uptime restarts near zero) and BootReceiver clears it. Read/enforced across
+        // BlockerService, MainViewModel, and BootReceiver; keep all comparisons on elapsedRealtime.
         val TEMPORARY_LOCKOUT_END_TIME = longPreferencesKey("temporary_lockout_end_time")
         val VOW_START_TIME_MS = longPreferencesKey("vow_start_time_ms")
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")
@@ -278,32 +289,42 @@ class VowDataStore(private val context: Context) {
         if (!isUnlocked) {
             preferences
         } else {
-            try {
-                if (!isSignatureValid(preferences)) {
-                    // Tampered! Fall back to strict lockout configuration to protect the system.
-                    val mutablePrefs = preferences.toMutablePreferences()
-                    mutablePrefs[IS_VOW_ACTIVE] = true
-                    mutablePrefs[IS_ACTIVE_VOW_MODE] = true
-                    val newRemaining = maxOf(preferences[REMAINING_VOW_SECONDS] ?: 0L, 7L * 24L * 3600L)
-                    mutablePrefs[REMAINING_VOW_SECONDS] = newRemaining
-                    mutablePrefs[SECURE_FOLDER_ENABLED] = true
-                    mutablePrefs[PRIVATE_SPACE_ENABLED] = true
-                    mutablePrefs[LOCK_UNINSTALL] = true
-                    mutablePrefs[DISALLOW_DATA_WIPE] = true
-                    mutablePrefs[DISABLE_SAFE_BOOT] = true
-                    mutablePrefs[BLOCK_PLAY_STORE] = true
-                    mutablePrefs[DEACTIVATE_USB_DEBUGGING] = true
-                    
-                    // Recompute signature for safety
-                    mutablePrefs[STATE_SIGNATURE] = computeSignatureFromPrefs(mutablePrefs)
-                    mutablePrefs
-                } else {
-                    preferences
-                }
+            val valid = try {
+                isSignatureValid(preferences)
             } catch (e: Throwable) {
-                throw IllegalStateException("Cryptographic key storage is inaccessible. Security anchor compromised.", e)
+                // The key storage is unreadable (an OS update or security event can invalidate the
+                // AndroidKeyStore key). We can't verify the signature, so fail OPEN and emit the raw
+                // prefs rather than crash-loop every collector. Enforcement still runs from
+                // BlockerService's in-memory state; only the cryptographic anchor is unavailable.
+                Log.e(TAG, "Signature check failed (key storage inaccessible); emitting raw prefs", e)
+                null
+            }
+            if (valid == false) {
+                // Signature invalid — tampering, OR an innocent key invalidation we cannot tell apart.
+                // Fall back to a *softened* 24h lockout (not the old 7-day) so a blameless user isn't
+                // punished; BlockerService posts an explanatory notification when it persists this.
+                val mutablePrefs = preferences.toMutablePreferences()
+                applyTamperLockout(mutablePrefs)
+                mutablePrefs[STATE_SIGNATURE] = computeSignatureFromPrefs(mutablePrefs)
+                mutablePrefs
+            } else {
+                preferences
             }
         }
+    }
+
+    /** The softened tamper/key-loss fallback state (D-3): a 24h vow floor + the protective locks. */
+    private fun applyTamperLockout(prefs: MutablePreferences) {
+        prefs[IS_VOW_ACTIVE] = true
+        prefs[IS_ACTIVE_VOW_MODE] = true
+        prefs[REMAINING_VOW_SECONDS] = maxOf(prefs[REMAINING_VOW_SECONDS] ?: 0L, TAMPER_LOCKOUT_SECONDS)
+        prefs[SECURE_FOLDER_ENABLED] = true
+        prefs[PRIVATE_SPACE_ENABLED] = true
+        prefs[LOCK_UNINSTALL] = true
+        prefs[DISALLOW_DATA_WIPE] = true
+        prefs[DISABLE_SAFE_BOOT] = true
+        prefs[BLOCK_PLAY_STORE] = true
+        prefs[DEACTIVATE_USB_DEBUGGING] = true
     }
 
     /**
@@ -312,27 +333,29 @@ class VowDataStore(private val context: Context) {
      * it only "stuck" on the next unrelated save. Call once at startup. Idempotent: once a valid
      * signature is written, subsequent calls are no-ops (so it can't loop or fight a valid state).
      */
-    suspend fun repairTamperedStateIfNeeded() {
+    suspend fun repairTamperedStateIfNeeded(): Boolean {
         val isUnlocked = try {
             context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
         } catch (e: Throwable) {
             true
         }
-        if (!isUnlocked) return
+        if (!isUnlocked) return false
+        var applied = false
         context.dataStore.edit { preferences ->
-            if (isSignatureValid(preferences)) return@edit
-            preferences[IS_VOW_ACTIVE] = true
-            preferences[IS_ACTIVE_VOW_MODE] = true
-            preferences[REMAINING_VOW_SECONDS] = maxOf(preferences[REMAINING_VOW_SECONDS] ?: 0L, 7L * 24L * 3600L)
-            preferences[SECURE_FOLDER_ENABLED] = true
-            preferences[PRIVATE_SPACE_ENABLED] = true
-            preferences[LOCK_UNINSTALL] = true
-            preferences[DISALLOW_DATA_WIPE] = true
-            preferences[DISABLE_SAFE_BOOT] = true
-            preferences[BLOCK_PLAY_STORE] = true
-            preferences[DEACTIVATE_USB_DEBUGGING] = true
+            val valid = try {
+                isSignatureValid(preferences)
+            } catch (e: Throwable) {
+                // Key storage unreadable — leave the state untouched rather than escalate on an
+                // unverifiable signature (matches the fail-open read path).
+                Log.e(TAG, "Signature check failed during repair; leaving state untouched", e)
+                return@edit
+            }
+            if (valid) return@edit
+            applyTamperLockout(preferences)
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+            applied = true
         }
+        return applied
     }
 
     suspend fun saveVowConfig(

@@ -137,7 +137,8 @@ class StateSignatureTest {
         val resolvedPrefs = realVowDataStore.preferencesFlow.first()
 
         assertTrue(resolvedPrefs[VowDataStore.IS_VOW_ACTIVE] == true)
-        assertTrue((resolvedPrefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= 7L * 24L * 3600L)
+        // Softened tamper/key-loss fallback (D-3): a 24h floor, not the former 7-day lockout.
+        assertTrue((resolvedPrefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= VowDataStore.TAMPER_LOCKOUT_SECONDS)
         assertTrue(resolvedPrefs[VowDataStore.LOCK_UNINSTALL] == true)
         assertTrue(resolvedPrefs[VowDataStore.DISALLOW_DATA_WIPE] == true)
         assertTrue(resolvedPrefs[VowDataStore.DISABLE_SAFE_BOOT] == true)

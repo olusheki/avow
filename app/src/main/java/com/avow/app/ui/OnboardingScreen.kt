@@ -25,6 +25,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -42,6 +43,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.avow.app.service.BlockerService
 import com.avow.app.ui.theme.*
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 private const val ONBOARDING_SLIDE_COUNT = 6
@@ -60,23 +62,25 @@ fun OnboardingFlow(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    var slideIndex by remember { mutableStateOf(0) }
+    // Saveable so a config change (foldables ignore the portrait lock) or process death doesn't
+    // restart onboarding from slide 0.
+    var slideIndex by rememberSaveable { mutableStateOf(0) }
 
     // Shown before we ever send the user to enable the accessibility service (Play prominent-
     // disclosure requirement): the user must affirmatively consent first.
-    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showAccessibilityDisclosure by rememberSaveable { mutableStateOf(false) }
 
     // Slide 2 local state.
-    var estimateHours by remember { mutableStateOf(2f) }
-    var realityHours by remember { mutableStateOf<Float?>(null) }
+    var estimateHours by rememberSaveable { mutableStateOf(2f) }
+    var realityHours by rememberSaveable { mutableStateOf<Float?>(null) }
 
     // Apps chosen on the apps & domains slide; seeded into the default quiet-hours block on finish.
     var selectedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // Final slide: one-tap recommended config + the first-vow duration picker.
-    var recommendedApplied by remember { mutableStateOf(false) }
-    var vowHours by remember { mutableStateOf(1) }
-    var vowMinutes by remember { mutableStateOf(0) }
+    var recommendedApplied by rememberSaveable { mutableStateOf(false) }
+    var vowHours by rememberSaveable { mutableStateOf(1) }
+    var vowMinutes by rememberSaveable { mutableStateOf(0) }
 
     // Live permission status — recomputed whenever the app returns from a settings screen.
     var permissionRefresh by remember { mutableStateOf(0) }
@@ -131,7 +135,7 @@ fun OnboardingFlow(
                 letterSpacing = 2.sp
             )
             Text(
-                text = String.format("%02d / %02d", slideIndex + 1, ONBOARDING_SLIDE_COUNT),
+                text = String.format(Locale.US, "%02d / %02d", slideIndex + 1, ONBOARDING_SLIDE_COUNT),
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
@@ -241,7 +245,7 @@ fun OnboardingFlow(
             }
             if (slideIndex < ONBOARDING_SLIDE_COUNT - 1) {
                 WarmCtaButton(
-                    text = if (slideIndex == 0) "[ BEGIN ]" else "CONTINUE",
+                    text = if (slideIndex == 0) "{ BEGIN }" else "CONTINUE",
                     enabled = !continueBlocked,
                     onClick = { if (!continueBlocked) slideIndex++ },
                     modifier = Modifier.weight(if (slideIndex == 0) 1f else 2f)
@@ -379,8 +383,9 @@ private fun SlideScreenTime(
         Slider(
             value = estimateHours,
             onValueChange = onEstimateChange,
-            valueRange = 0.5f..8f,
-            steps = 14,
+            // 0.5h–16h in 0.5h stops (30 steps): heavy use really can reach the double digits.
+            valueRange = 0.5f..16f,
+            steps = 30,
             colors = SliderDefaults.colors(
                 thumbColor = MonospaceText,
                 activeTrackColor = MonospaceText,
@@ -995,7 +1000,7 @@ private fun WarmCtaButton(
 
 /* ----------------------------- Helpers ----------------------------- */
 
-private fun formatHours(hours: Float): String = String.format("%.1fh", hours)
+private fun formatHours(hours: Float): String = String.format(Locale.US, "%.1fh", hours)
 
 private fun comparePitch(estimate: Float, reality: Float?): String {
     if (reality == null) {

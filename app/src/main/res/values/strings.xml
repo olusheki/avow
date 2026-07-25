@@ -2,4 +2,29 @@
     <string name="app_name">aVow</string>
     <string name="device_admin_description">Enforces unyielding digital binding vows for absolute distraction control.</string>
     <string name="accessibility_service_description">aVow uses the accessibility service only to enforce the limits you set. It reads which app is in the foreground, and the address bar of your browser, so it can block the apps and websites you chose to restrict during your vows and scheduled blocks. It does not collect, store, or share your activity, and no data leaves your device.</string>
+
+    <!-- Reminder notification (ReminderWorker) -->
+    <string name="reminder_channel_name">Vow Reminders</string>
+    <string name="reminder_channel_description">Occasional nudges to set a new vow after a quiet spell.</string>
+    <string name="reminder_title">Been a while.</string>
+    <string name="reminder_text">No vow is holding the line right now. Set one and get back on track.</string>
+    <string name="reminder_big_text">No vow is holding the line right now. Tap to set one and get back on track.</string>
+
+    <!-- Domain filter VPN notification (DomainVpnService) -->
+    <string name="vpn_channel_name">Domain filter</string>
+    <string name="vpn_channel_description">Blocks the websites you chose, in every browser.</string>
+    <string name="vpn_title">aVow — domain filter active</string>
+    <string name="vpn_text">Blocking your restricted sites in every browser.</string>
+
+    <!-- Tamper / key-loss softened lockout notification (BlockerService, D-3) -->
+    <string name="tamper_channel_name">Security</string>
+    <string name="tamper_channel_description">Alerts when aVow\'s security anchor changes.</string>
+    <string name="tamper_title">aVow security check</string>
+    <string name="tamper_text">Your device\'s security key changed — this often happens after a system update. As a precaution, a 24-hour vow is active. It will lift on its own; no action needed.</string>
+
+    <!-- Doomscroll warning notification (BlockerService) -->
+    <string name="doomscroll_warning_channel_name">Doomscroll Warning</string>
+    <string name="doomscroll_warning_channel_description">Notifies when the time limit in a target app is nearly reached</string>
+    <string name="doomscroll_warning_title">Doomscroll Warning</string>
+    <string name="doomscroll_warning_text">You\'ve spent a while in here. Tap to bind a 15-minute vow.</string>
 </resources>

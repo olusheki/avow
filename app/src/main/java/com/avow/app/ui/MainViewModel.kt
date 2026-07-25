@@ -57,11 +57,15 @@ class MainViewModel @JvmOverloads constructor(
                 addCategory(Intent.CATEGORY_LAUNCHER)
             }
             val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+            // Never offer aVow itself as a blockable target — blocking it would lock the user out of
+            // the very app they need to lift the vow. Filtering here covers every picker (onboarding
+            // and config both read installedApps) and both flavors (com.avow.app / .plus).
+            val selfPackage = getApplication<Application>().packageName
             val list = resolveInfos.map {
                 val packageName = it.activityInfo.packageName
                 val label = it.loadLabel(pm).toString()
                 packageName to label
-            }.distinctBy { it.first }.sortedBy { it.second }
+            }.filter { it.first != selfPackage }.distinctBy { it.first }.sortedBy { it.second }
 
             val apps = if (list.isEmpty()) {
                 listOf(

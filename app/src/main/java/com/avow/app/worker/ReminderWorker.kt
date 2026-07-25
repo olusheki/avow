@@ -60,9 +60,9 @@ class ReminderWorker(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Vow Reminders",
+                ctx.getString(com.avow.app.R.string.reminder_channel_name),
                 NotificationManager.IMPORTANCE_DEFAULT
-            ).apply { description = "Occasional nudges to set a new vow after a quiet spell." }
+            ).apply { description = ctx.getString(com.avow.app.R.string.reminder_channel_description) }
             manager.createNotificationChannel(channel)
         }
 
@@ -75,11 +75,11 @@ class ReminderWorker(
         )
 
         val builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setContentTitle("Been a while.")
-            .setContentText("No vow is holding the line right now. Set one and get back on track.")
+            .setContentTitle(ctx.getString(com.avow.app.R.string.reminder_title))
+            .setContentText(ctx.getString(com.avow.app.R.string.reminder_text))
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "No vow is holding the line right now. Tap to set one and get back on track."
+                    ctx.getString(com.avow.app.R.string.reminder_big_text)
                 )
             )
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
