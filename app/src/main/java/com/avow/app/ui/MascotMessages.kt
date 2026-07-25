@@ -98,6 +98,7 @@ object MascotMessages {
         "BANNED SITE" -> "You asked me to keep this one shut. Holding."
         "PRIVATE BROWSING" -> "No side doors. The vow still counts here."
         "SECURE PROFILE" -> "That path is sealed while the vow holds."
+        "PICTURE-IN-PICTURE" -> "No pop-out escape. The block still holds."
         else -> "You set this boundary. I'm keeping it."
     }
 

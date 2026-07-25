@@ -409,11 +409,23 @@ class BlockerService : AccessibilityService() {
                 }
             }
 
-            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
                 pkgChanged ||
-                (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && 
+                (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
                  (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser"))) {
                 manageTrackingJob()
+            }
+
+            // Picture-in-Picture evasion: dragging a target into a PiP window keeps it playing while
+            // a different app becomes "foreground", dodging every currentForegroundPackage check
+            // below. Scan the on-screen windows for a restricted target in PiP and block it. Runs
+            // before the enforcement-active return so a doomscroll-only shield (no vow) still catches
+            // it. Gated to window-state changes to bound the (cheap) windows scan.
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                if (restrictedPackageInPip() != null) {
+                    triggerBlackoutOverlay("PICTURE-IN-PICTURE")
+                    return
+                }
             }
 
             // Enforce when a vow is running OR the user chose Active mode (rules apply without a vow).
@@ -629,6 +641,55 @@ class BlockerService : AccessibilityService() {
     private fun isDoomscrollTargetApp(pkgName: String): Boolean {
         if (pkgName in neverBlockablePackages) return false
         return doomscrollTargetApps.contains(pkgName)
+    }
+
+    /**
+     * Returns a restricted target found in a Picture-in-Picture window whose restriction is currently
+     * in force, or null. This closes the drag-to-PiP bypass: a target in PiP keeps playing while a
+     * different app is foreground, so the foreground-based checks never see it.
+     *
+     * Only the binary window-based restrictions are covered here — an enabled scheduled block inside
+     * its window, and the doomscroll shield inside its window — because those don't need per-second
+     * usage metering (which PiP can't provide). We can detect and interrupt, but note there is no
+     * public API to force another app out of PiP, so this re-asserts the block rather than dismissing
+     * the pop-out. Requires flagRetrieveInteractiveWindows (accessibility_service_config.xml).
+     *
+     * NOTE: not fully device-verified — getWindows()/PiP reporting varies by OEM. Fail-soft (any
+     * error yields null, i.e. no false block).
+     */
+    private fun restrictedPackageInPip(): String? {
+        if (!isEnforcementActive && !doomscrollShieldEnabled) return null
+        val wins = try { windows } catch (e: Throwable) { return null } ?: return null
+        for (w in wins) {
+            val inPip = try { w.isInPictureInPictureMode } catch (e: Throwable) { false }
+            if (!inPip) continue
+            val root = try { w.root } catch (e: Throwable) { null } ?: continue
+            val pkg = try {
+                root.packageName?.toString()
+            } catch (e: Throwable) { null } finally {
+                try { root.recycle() } catch (_: Throwable) {}
+            }
+            if (pkg.isNullOrEmpty()) continue
+
+            // Scheduled block covering this app right now (needs a running vow / Active mode).
+            if (isEnforcementActive) {
+                for (block in vowBlocks) {
+                    if (block.isEnabled &&
+                        isBlockRestrictedAppPackage(block, pkg) &&
+                        isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin)) {
+                        return pkg
+                    }
+                }
+            }
+            // Doomscroll shield inside its active window (independent of any vow).
+            if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkg)) {
+                val windowActive = doomscrollAllTime || isCurrentTimeInQuietHours(
+                    doomscrollStartHour, doomscrollStartMin, doomscrollEndHour, doomscrollEndMin
+                )
+                if (windowActive) return pkg
+            }
+        }
+        return null
     }
 
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {

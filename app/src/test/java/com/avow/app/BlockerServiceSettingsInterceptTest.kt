@@ -408,4 +408,64 @@ class BlockerServiceSettingsInterceptTest {
         // testActiveModeEnforcesScheduledBlockWithoutVow, which DOES block Instagram).
         verify(exactly = 0) { service.startActivity(any()) }
     }
+
+    @Test
+    fun testDoomscrollTargetInPictureInPictureIsBlocked() {
+        // GIVEN: the doomscroll shield is on (all-day) for Instagram, and Instagram is sitting in a
+        // PiP window while a benign app (the launcher) is the full-screen foreground — the reported
+        // drag-to-PiP bypass, where the pop-out keeps auto-playing off-screen.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<String>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: the foreground switches to the launcher but Instagram keeps playing in PiP
+        service.onAccessibilityEvent(event)
+
+        // THEN: the block overlay still fires against the PiP target
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testNonTargetInPictureInPictureIsIgnored() {
+        // GIVEN: the shield is on for Instagram, but a non-target app (a video player) is in PiP —
+        // legitimate PiP must not be blocked.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "org.videolan.vlc"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: no block — only restricted targets in PiP are caught
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
 }
