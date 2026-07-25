@@ -37,6 +37,7 @@ import java.util.Locale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -637,7 +638,9 @@ fun TemporaryLockoutOverlay(
             .background(LightGraphiteBg)
             // Double-tap returns to aVow. This does NOT end the cooldown — the service still
             // intercepts the target apps for its duration — it just frees the user from being
-            // trapped inside aVow's own lockout screen.
+            // trapped inside aVow's own lockout screen. The semantic action gives TalkBack users the
+            // same exit (a sighted-only double-tap gesture would otherwise strand them here).
+            .semantics { onClick(label = "Return to aVow") { onExit(); true } }
             .pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { onExit() })
             },
@@ -2016,6 +2019,8 @@ fun IntrusionInterceptOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(LightGraphiteBg)
+            // Semantic exit so TalkBack users aren't trapped by the sighted-only double-tap gesture.
+            .semantics { onClick(label = "Close") { onExit(); true } }
             .pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { onExit() })
             },
