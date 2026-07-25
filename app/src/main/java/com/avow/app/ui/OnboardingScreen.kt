@@ -383,8 +383,9 @@ private fun SlideScreenTime(
         Slider(
             value = estimateHours,
             onValueChange = onEstimateChange,
-            valueRange = 0.5f..8f,
-            steps = 14,
+            // 0.5h–16h in 0.5h stops (30 steps): heavy use really can reach the double digits.
+            valueRange = 0.5f..16f,
+            steps = 30,
             colors = SliderDefaults.colors(
                 thumbColor = MonospaceText,
                 activeTrackColor = MonospaceText,
