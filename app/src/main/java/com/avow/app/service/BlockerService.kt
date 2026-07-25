@@ -10,6 +10,7 @@ import com.avow.app.MainActivity
 import com.avow.app.data.VowDataStore
 import com.avow.app.model.VowBlock
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.retryWhen
 import kotlin.concurrent.withLock
 import java.util.Calendar
 import android.app.NotificationChannel
@@ -193,7 +194,17 @@ class BlockerService : AccessibilityService() {
 
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
-            vowDataStore.preferencesFlow.collect { prefs ->
+            vowDataStore.preferencesFlow
+                // A direct-boot read (device still PIN-locked after a reboot) of the credential-
+                // encrypted DataStore can throw. Without a retry the collector would die for the
+                // whole process lifetime, silently disabling enforcement until the service restarts.
+                // Back off and re-subscribe so it recovers once the user unlocks.
+                .retryWhen { cause, _ ->
+                    Log.e(TAG, "Config collector failed; retrying in 5s", cause)
+                    delay(5000L)
+                    true
+                }
+                .collect { prefs ->
                 val activeNow = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                 
                 isVowActive = activeNow
@@ -223,7 +234,12 @@ class BlockerService : AccessibilityService() {
                 doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
                 // The service's in-memory value is authoritative while running: persisted saves are
                 // async and unordered, so a disk value must never shrink an already-enforced lockout.
-                temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L)
+                // Sanitize the disk value first: a reboot-stale elapsedRealtime carried from a prior
+                // boot reads far in the future and would phantom-lock target apps for hours/days.
+                val diskLockoutEnd = com.avow.app.util.VowValidator.sanitizeLockoutEnd(
+                    prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+                )
+                temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, diskLockoutEnd)
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23

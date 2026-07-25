@@ -144,7 +144,11 @@ class MainViewModel @JvmOverloads constructor(
                 val vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
                 val vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
                 val vpnDomainBlockingEnabled = prefs[VowDataStore.VPN_DOMAIN_BLOCKING_ENABLED] ?: false
-                val temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                // Discard a reboot-stale lockout end (elapsedRealtime from a prior boot reads far in
+                // the future) so the UI never opens on a phantom cooldown screen.
+                val temporaryLockoutEndTime = VowValidator.sanitizeLockoutEnd(
+                    prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+                )
                 val doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 val doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 val doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -512,7 +516,10 @@ class MainViewModel @JvmOverloads constructor(
     fun enterTemporaryLockout() {
         viewModelScope.launch {
             val end = try {
-                vowDataStore.preferencesFlow.first()[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                VowValidator.sanitizeLockoutEnd(
+                    vowDataStore.preferencesFlow.first()[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L,
+                    SystemClock.elapsedRealtime()
+                )
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to read lockout end time", e)
                 0L
