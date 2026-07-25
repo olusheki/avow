@@ -379,4 +379,33 @@ class BlockerServiceSettingsInterceptTest {
         // THEN: it is bounced — disabling the service must be blocked during any running vow
         verify(exactly = 1) { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
     }
+
+    @Test
+    fun testNeverBlockablePackageIsNotBlockedEvenWhenScheduled() {
+        // GIVEN: an active-mode all-day block that (mis)targets the launcher, and the launcher is in
+        // the never-blockable set — blocking it could trap the user on an aVow-only device.
+        setField("isVowActive", false)
+        setField("isActiveVowMode", true)
+        setField("vowBlocks", listOf(
+            VowBlock(
+                id = "1", name = "All day", isEnabled = true,
+                startHour = 0, startMin = 0, endHour = 23, endMin = 59,
+                targetApps = setOf("com.android.launcher"), specificDomain = ""
+            )
+        ))
+        setField("neverBlockablePackages", setOf("com.android.launcher"))
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: the launcher comes to the foreground within the block window
+        service.onAccessibilityEvent(event)
+
+        // THEN: it is NOT blocked — the guard overrides the scheduled block (compare with
+        // testActiveModeEnforcesScheduledBlockWithoutVow, which DOES block Instagram).
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
 }

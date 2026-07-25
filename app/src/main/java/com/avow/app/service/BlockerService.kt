@@ -96,6 +96,8 @@ class BlockerService : AccessibilityService() {
     @Volatile private var currentForegroundPackage = ""
     @Volatile private var currentBrowserUrl = ""
     @Volatile private var vowBlocks = emptyList<VowBlock>()
+    // The launcher/dialer/self set that must never be blocked (see BlockGuard). Resolved in onCreate.
+    @Volatile private var neverBlockablePackages = emptySet<String>()
     private lateinit var vowDataStore: VowDataStore
 
     private val userPresentReceiver = object : android.content.BroadcastReceiver() {
@@ -170,6 +172,9 @@ class BlockerService : AccessibilityService() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
         selfLabel = try { getString(com.avow.app.R.string.app_name) } catch (e: Throwable) { "aVow" }
+        neverBlockablePackages = try {
+            com.avow.app.util.BlockGuard.neverBlockablePackages(this)
+        } catch (e: Throwable) { setOf(packageName) }
         val presenceFilter = android.content.IntentFilter().apply {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -605,6 +610,7 @@ class BlockerService : AccessibilityService() {
 
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
         if (!isEnforcementActive) return false
+        if (pkgName in neverBlockablePackages) return false
         return block.targetApps.contains(pkgName)
     }
 
@@ -613,11 +619,15 @@ class BlockerService : AccessibilityService() {
         return isTargetAppPackage(pkgName)
     }
 
+    // The three target-set checks below all funnel through the never-blockable guard: blocking the
+    // launcher or dialer could brick the phone into an aVow-only device for the length of a vow.
     private fun isTargetAppPackage(pkgName: String): Boolean {
+        if (pkgName in neverBlockablePackages) return false
         return targetAppSet.contains(pkgName)
     }
 
     private fun isDoomscrollTargetApp(pkgName: String): Boolean {
+        if (pkgName in neverBlockablePackages) return false
         return doomscrollTargetApps.contains(pkgName)
     }
 
