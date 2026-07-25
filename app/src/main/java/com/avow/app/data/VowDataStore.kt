@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.UserManager
 import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,13 @@ import kotlinx.coroutines.flow.first
 import com.avow.app.util.VowValidator
 import com.avow.app.worker.ReminderInputs
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vow_settings")
+// A corrupt prefs file would otherwise make every read/write throw forever, hard-bricking the app.
+// Fail OPEN: replace it with empty prefs (which validate as a clean first-launch state, no tamper
+// escalation) — losing an in-flight vow is the safe direction versus a permanently unusable app.
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "vow_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 class VowDataStore(private val context: Context) {
 
