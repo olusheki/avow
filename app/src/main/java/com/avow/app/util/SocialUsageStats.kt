@@ -1,5 +1,6 @@
 package com.avow.app.util
 
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 
@@ -30,18 +31,64 @@ object SocialUsageStats {
         return SOCIAL_MEDIA_KEYWORDS.any { p.contains(it) }
     }
 
-    /** Aggregates foreground time across social media apps only, within [start, end], in hours. */
+    /** A foreground/background transition, extracted so the aggregation is unit-testable. */
+    internal data class FgEvent(val type: Int, val pkg: String, val timestamp: Long)
+
+    /**
+     * Aggregates foreground time across social media apps only, within [start, end], in hours.
+     *
+     * Uses [UsageStatsManager.queryEvents] rather than `queryUsageStats(INTERVAL_DAILY).totalTimeInForeground`:
+     * the daily buckets are not clipped to the query window, so summing them over-reports a rolling
+     * 24h/7d range. Walking the resume/pause events gives the exact time inside the window.
+     */
     fun queryHours(context: Context, start: Long, end: Long): Float {
         return try {
             val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
-            val totalMs = stats
-                ?.filter { isSocialMediaPackage(it.packageName) }
-                ?.sumOf { it.totalTimeInForeground } ?: 0L
-            (totalMs / MS_PER_HOUR).coerceAtLeast(0f)
+            val raw = usm.queryEvents(start, end)
+            val events = mutableListOf<FgEvent>()
+            val e = UsageEvents.Event()
+            while (raw.hasNextEvent()) {
+                raw.getNextEvent(e)
+                if (e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                    e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+                ) {
+                    events.add(FgEvent(e.eventType, e.packageName, e.timeStamp))
+                }
+            }
+            (socialForegroundMs(events, start, end) / MS_PER_HOUR).coerceAtLeast(0f)
         } catch (e: Exception) {
             0f
         }
+    }
+
+    /**
+     * Sums the time social-media apps spent in the foreground across [events] (assumed ordered),
+     * clipped to [windowStart, windowEnd]. Single-foreground model: a new foreground closes the
+     * previous app's session; an app still foreground at the window end counts until [windowEnd]; a
+     * background with no seen foreground (session began before the window) counts from [windowStart].
+     */
+    internal fun socialForegroundMs(events: List<FgEvent>, windowStart: Long, windowEnd: Long): Long {
+        var total = 0L
+        var fgPkg: String? = null
+        var since = 0L
+        for (ev in events) {
+            when (ev.type) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += ev.timestamp - since
+                    fgPkg = ev.pkg
+                    since = ev.timestamp
+                }
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    if (isSocialMediaPackage(ev.pkg)) {
+                        val from = if (fgPkg == ev.pkg) since else windowStart
+                        total += ev.timestamp - from
+                    }
+                    fgPkg = null
+                }
+            }
+        }
+        if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += windowEnd - since
+        return total.coerceAtLeast(0L)
     }
 
     /** Convenience: social-media hours over the last 24h (used by the onboarding scan). */
