@@ -39,7 +39,7 @@ Most app blockers are one tap away from being switched off — right when they n
 ## Features
 
 - ⏳ **Binding vows** — commit for minutes or months. Add time or tighten the rules whenever you like; never loosen or cancel until the timer runs out.
-- 📵 **Block apps & websites** — pick what to shut out. Sites are blocked in *every* browser via an on-device DNS filter — no traffic leaves your phone.
+- 📵 **Block apps & websites** — pick what to shut out. Sites are blocked in *every* browser (not just the ones aVow can read) via an on-device DNS filter that sinkholes blocked domains locally — no server of ours in the loop.
 - 🕓 **Schedules & usage limits** — "quiet hours" windows and per-app time budgets (say, 10 minutes an hour).
 - 🌀 **Doomscroll shield** — spend past your allowance in a chosen app and it locks for a cooldown, with a stricter late-night window.
 - 🙅 **No sneaking out** — attempts to disable aVow from Settings, use private/incognito browsing, or slip an app into a pop-out (picture-in-picture) or split-screen are caught too.
