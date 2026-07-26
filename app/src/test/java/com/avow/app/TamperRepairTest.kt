@@ -58,7 +58,9 @@ class TamperRepairTest {
         // THEN: the softened 24h lockout (D-3) is persisted and the signature is now valid.
         val prefs = testDataStore.data.first()
         assertTrue(prefs[VowDataStore.IS_VOW_ACTIVE] ?: false)
-        assertTrue(prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false)
+        // Active mode is intentionally NOT forced — the vow floor drives enforcement, and forcing it
+        // would strand a blameless user in permanent Active mode after the lockout lifts.
+        assertFalse(prefs[VowDataStore.IS_ACTIVE_VOW_MODE] ?: false)
         assertTrue((prefs[VowDataStore.REMAINING_VOW_SECONDS] ?: 0L) >= VowDataStore.TAMPER_LOCKOUT_SECONDS)
         assertTrue(prefs[VowDataStore.BLOCK_PLAY_STORE] ?: false)
         assertTrue(vowDataStore.isSignatureValid(prefs))

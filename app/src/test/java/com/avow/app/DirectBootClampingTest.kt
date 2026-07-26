@@ -30,6 +30,26 @@ class DirectBootClampingTest {
     }
 
     @Test
+    fun testSanitizeLockoutEnd_discardsRebootStaleValue() {
+        // A lockout end carried from a prior boot (huge elapsedRealtime) with the clock now near zero
+        // reads far in the future and would phantom-lock target apps — must be discarded to 0.
+        val staleFromPrevBoot = 900_000_000L // ~10 days of prior uptime
+        val nowAfterReboot = 5_000L          // 5s since this boot
+        assertEquals(0L, VowValidator.sanitizeLockoutEnd(staleFromPrevBoot, nowAfterReboot))
+    }
+
+    @Test
+    fun testSanitizeLockoutEnd_keepsLegitimateInWindowValue() {
+        val now = 1_000_000L
+        val legit = now + 45L * 60L * 1000L // a real 45-min cooldown ends within the window
+        assertEquals(legit, VowValidator.sanitizeLockoutEnd(legit, now))
+        // An already-elapsed value passes through untouched (downstream treats < now as expired).
+        assertEquals(now - 1000L, VowValidator.sanitizeLockoutEnd(now - 1000L, now))
+        // Zero (no lockout) stays zero.
+        assertEquals(0L, VowValidator.sanitizeLockoutEnd(0L, now))
+    }
+
+    @Test
     fun testClampingNegativeValue() {
         val negativeSeconds = -500L
         val clamped = VowValidator.clampRemainingSeconds(negativeSeconds)

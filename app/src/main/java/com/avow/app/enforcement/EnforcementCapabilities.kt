@@ -37,4 +37,12 @@ interface EnforcementCapabilities {
 
     /** Strips Device Owner so the app can be uninstalled. Returns an error message, or null. */
     fun deactivateDeviceOwner(): String?
+
+    /**
+     * Suspends (or un-suspends) the given packages so they cannot run at all — the full flavor's
+     * answer to pop-out/split-screen evasion, since a suspended app can't keep a PiP window alive.
+     * Device-owner only: a no-op in lite and when not provisioned. Safe/idempotent; failures for
+     * individual packages are swallowed.
+     */
+    fun setAppsSuspended(packages: Set<String>, suspended: Boolean)
 }

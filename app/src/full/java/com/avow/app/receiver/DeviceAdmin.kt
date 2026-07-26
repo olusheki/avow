@@ -135,6 +135,26 @@ class DeviceAdmin : DeviceAdminReceiver() {
         }
 
         /**
+         * Suspends or un-suspends [packages] via Device Owner. A suspended app cannot run, so it
+         * can't keep a Picture-in-Picture / split-screen window alive — this is the full flavor's
+         * hard answer to that evasion. No-op unless genuinely Device Owner; per-package failures are
+         * logged and swallowed so a bad package name can never strand the others.
+         */
+        fun setAppsSuspended(context: Context, packages: Set<String>, suspended: Boolean) {
+            if (packages.isEmpty()) return
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminComponent = ComponentName(context, DeviceAdmin::class.java)
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
+            try {
+                dpm.setPackagesSuspended(adminComponent, packages.toTypedArray(), suspended)
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Failed to set package suspension (suspended=$suspended)", e)
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "Bad package in suspension set", e)
+            }
+        }
+
+        /**
          * Clears all system restrictions and programmatically strips Device Owner status,
          * allowing the application to be uninstalled natively from the system.
          */

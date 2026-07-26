@@ -379,4 +379,259 @@ class BlockerServiceSettingsInterceptTest {
         // THEN: it is bounced — disabling the service must be blocked during any running vow
         verify(exactly = 1) { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
     }
+
+    @Test
+    fun testNeverBlockablePackageIsNotBlockedEvenWhenScheduled() {
+        // GIVEN: an active-mode all-day block that (mis)targets the launcher, and the launcher is in
+        // the never-blockable set — blocking it could trap the user on an aVow-only device.
+        setField("isVowActive", false)
+        setField("isActiveVowMode", true)
+        setField("vowBlocks", listOf(
+            VowBlock(
+                id = "1", name = "All day", isEnabled = true,
+                startHour = 0, startMin = 0, endHour = 23, endMin = 59,
+                targetApps = setOf("com.android.launcher"), specificDomain = ""
+            )
+        ))
+        setField("neverBlockablePackages", setOf("com.android.launcher"))
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: the launcher comes to the foreground within the block window
+        service.onAccessibilityEvent(event)
+
+        // THEN: it is NOT blocked — the guard overrides the scheduled block (compare with
+        // testActiveModeEnforcesScheduledBlockWithoutVow, which DOES block Instagram).
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testDoomscrollTargetInPictureInPictureIsBlocked() {
+        // GIVEN: the doomscroll shield is on (all-day) for Instagram, and Instagram is sitting in a
+        // PiP window while a benign app (the launcher) is the full-screen foreground — the reported
+        // drag-to-PiP bypass, where the pop-out keeps auto-playing off-screen.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<String>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // WHEN: the foreground switches to the launcher but Instagram keeps playing in PiP
+        service.onAccessibilityEvent(event)
+
+        // THEN: the evasion cooldown lockout fires against the PiP target
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testDoomscrollTargetInSplitScreenIsBlocked() {
+        // GIVEN: the shield is on (all-day) for Instagram, and the screen is split between another
+        // app (focused) and Instagram — using it side-by-side to dodge the foreground check.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+        setField("currentForegroundPackage", "com.some.otherapp")
+
+        val igRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { igRoot.packageName } returns "com.instagram.android"
+        val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { igWin.isInPictureInPictureMode } returns false
+        every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.root } returns igRoot
+
+        val otherRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { otherRoot.packageName } returns "com.some.otherapp"
+        val otherWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { otherWin.isInPictureInPictureMode } returns false
+        every { otherWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { otherWin.root } returns otherRoot
+
+        every { service.windows } returns listOf(igWin, otherWin)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.some.otherapp"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the evasion cooldown lockout fires against the non-focused split-screen target
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testSingleForegroundDoomscrollTargetDoesNotTriggerEvasionLockout() {
+        // GIVEN: a doomscroll target used normally (single fullscreen app, no PiP, no split) — the
+        // evasion path must NOT fire; normal foreground use is metered, not immediately locked.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val igRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { igRoot.packageName } returns "com.instagram.android"
+        val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { igWin.isInPictureInPictureMode } returns false
+        every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.root } returns igRoot
+        every { service.windows } returns listOf(igWin)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.instagram.android"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: no evasion lockout — a single fullscreen target isn't evading anything
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testEvasionSuspendsTargetWhenDeviceOwner() {
+        // GIVEN: full flavor, Device Owner active, and a doomscroll target caught in PiP.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.supportsDeviceOwnerFeatures } returns true
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the evading app is actually suspended (the full-flavor "prevent" path).
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), true) }
+    }
+
+    @Test
+    fun testEvasionOnLiteWithVowAddsPenaltyNotCooldown() {
+        // GIVEN: lite flavor (no device-owner powers), a running vow, and a doomscroll target in PiP.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+        setField("isVowActive", true)
+        setField("vowStartTimeMs", 1000L)
+
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.supportsDeviceOwnerFeatures } returns false
+        setField("capabilities", caps)
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the vow is penalized (async), and NO cooldown-lockout overlay is launched.
+        coVerify(timeout = 2000) { mockDataStore.applyEvasionVowPenalty(3600L) }
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testReconcileReleasesSuspensionWhenCooldownExpired() {
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+        setField("evasionSuspendedPackages", setOf("com.instagram.android"))
+        setField("temporaryLockoutEndTime", 0L) // no active cooldown (elapsedRealtime is 0 in tests)
+
+        val m = BlockerService::class.java.getDeclaredMethod("reconcileEvasionSuspension")
+        m.isAccessible = true
+        m.invoke(service)
+
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), false) }
+    }
+
+    @Test
+    fun testReconcileKeepsSuspensionWhileCooldownActive() {
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+        setField("evasionSuspendedPackages", setOf("com.instagram.android"))
+        setField("temporaryLockoutEndTime", 60_000L) // cooldown still running
+
+        val m = BlockerService::class.java.getDeclaredMethod("reconcileEvasionSuspension")
+        m.isAccessible = true
+        m.invoke(service)
+
+        verify(exactly = 0) { caps.setAppsSuspended(any(), false) }
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), true) }
+    }
+
+    @Test
+    fun testNonTargetInPictureInPictureIsIgnored() {
+        // GIVEN: the shield is on for Instagram, but a non-target app (a video player) is in PiP —
+        // legitimate PiP must not be blocked.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "org.videolan.vlc"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: no block — only restricted targets in PiP are caught
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
 }

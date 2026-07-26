@@ -280,6 +280,17 @@ object VowValidator {
     }
 
     /**
+     * A temporary (doomscroll / clock-tamper) lockout end is stored as an [android.os.SystemClock.elapsedRealtime]
+     * value, which is meaningless once uptime restarts near zero on reboot: a value carried over from
+     * a previous boot can read as hours or days in the future and phantom-lock the target apps.
+     *
+     * Any legitimate lockout ends within one cooldown of now (the cooldown/clock-tamper penalties cap
+     * at ~60 min), so an end more than [maxCooldownMs] in the future is stale — treat it as no lockout.
+     */
+    fun sanitizeLockoutEnd(endTime: Long, nowElapsedMs: Long, maxCooldownMs: Long = 61L * 60L * 1000L): Long =
+        if (endTime > nowElapsedMs + maxCooldownMs) 0L else endTime
+
+    /**
      * Calculates the Zen Score for a focus session (0-100).
      * Formula: Zen Score = max(0, 100 - (Pickups * 10) - (fractionOfTimeOnPhone * 50))
      */

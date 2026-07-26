@@ -19,6 +19,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -37,6 +38,7 @@ import java.util.Locale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -393,6 +395,7 @@ fun MainScreen(
             ScreenState.TEMPORARY_LOCKOUT -> {
                 TemporaryLockoutOverlay(
                     endTimeElapsedRealtime = uiState.temporaryLockoutEndTime,
+                    reason = uiState.lockoutReason,
                     onExit = {
                         viewModel.setScreenState(
                             if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
@@ -619,9 +622,18 @@ fun StraightFaceOutline(
 @Composable
 fun TemporaryLockoutOverlay(
     endTimeElapsedRealtime: Long = 0L,
+    reason: String = "",
     onExit: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Word the screen for why it fired: an evasion block (a blocked app caught running in a pop-out
+    // or side-by-side window) reads differently from a plain doomscroll cooldown.
+    val isEvasion = reason == VowDataStore.LOCKOUT_REASON_EVASION
+    val titleText = if (isEvasion) "[ NO SIDE DOORS ]" else "[ DOOMSCROLL COOLDOWN ]"
+    val bodyText = if (isEvasion)
+        "Popping the app out to keep it running won't slip past the block. Hold tight — the lock lifts itself."
+    else
+        "The scroll ran long. Take a breath — the lock lifts itself."
     var remainingSec by remember(endTimeElapsedRealtime) {
         mutableStateOf(((endTimeElapsedRealtime - SystemClock.elapsedRealtime()) / 1000L).coerceAtLeast(0L))
     }
@@ -637,7 +649,9 @@ fun TemporaryLockoutOverlay(
             .background(LightGraphiteBg)
             // Double-tap returns to aVow. This does NOT end the cooldown — the service still
             // intercepts the target apps for its duration — it just frees the user from being
-            // trapped inside aVow's own lockout screen.
+            // trapped inside aVow's own lockout screen. The semantic action gives TalkBack users the
+            // same exit (a sighted-only double-tap gesture would otherwise strand them here).
+            .semantics { onClick(label = "Return to aVow") { onExit(); true } }
             .pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { onExit() })
             },
@@ -651,7 +665,7 @@ fun TemporaryLockoutOverlay(
             )
             Spacer(modifier = Modifier.height(28.dp))
             Text(
-                text = "[ DOOMSCROLL COOLDOWN ]",
+                text = titleText,
                 color = LockedRed,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
@@ -669,7 +683,7 @@ fun TemporaryLockoutOverlay(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "The scroll ran long. Take a breath — the lock lifts itself.",
+                text = bodyText,
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
@@ -1515,7 +1529,12 @@ fun ConfigurationWorkspace(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onVpnToggle(!vpnEnabled) }
+                    // One merged switch for TalkBack (row + switch would otherwise be two focus stops).
+                    .toggleable(
+                        value = vpnEnabled,
+                        role = Role.Switch,
+                        onValueChange = { onVpnToggle(it) }
+                    )
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1537,8 +1556,9 @@ fun ConfigurationWorkspace(
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Switch(
+                    // Decorative: the toggle action + state live on the Row (toggleable) above.
                     checked = vpnEnabled,
-                    onCheckedChange = { onVpnToggle(it) },
+                    onCheckedChange = null,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = LightGraphiteBg,
                         checkedTrackColor = MonospaceText,
@@ -2016,6 +2036,8 @@ fun IntrusionInterceptOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(LightGraphiteBg)
+            // Semantic exit so TalkBack users aren't trapped by the sighted-only double-tap gesture.
+            .semantics { onClick(label = "Close") { onExit(); true } }
             .pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { onExit() })
             },
@@ -2144,16 +2166,7 @@ fun UsageLimitsConfigDialog(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "X",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { onDismiss() }
-                            .padding(4.dp)
-                    )
+                    DialogCloseX(onDismiss = onDismiss)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -2675,37 +2688,41 @@ fun DoomscrollConfigDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("CONFIG: DOOMSCROLL SHIELD", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Text("X", color = MonospaceText, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onDismiss() }.padding(4.dp))
+                DialogCloseX(onDismiss = onDismiss)
             }
             Spacer(modifier = Modifier.height(10.dp))
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(OutlineAccent))
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Enable Toggle Row
+                // Enable Toggle Row — row + switch merged into one TalkBack focus stop.
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { toggleShield() }.padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .toggleable(value = uiState.doomscrollShieldEnabled, role = Role.Switch, onValueChange = { toggleShield() })
+                        .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("ENABLE", color = if (uiState.doomscrollShieldEnabled) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Switch(
                         checked = uiState.doomscrollShieldEnabled,
-                        onCheckedChange = { toggleShield() },
+                        onCheckedChange = null,
                         colors = SwitchDefaults.colors(checkedThumbColor = LightGraphiteBg, checkedTrackColor = MonospaceText, checkedBorderColor = OutlineAccent, uncheckedThumbColor = OutlineAccent, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = OutlineAccent)
                     )
                 }
 
                 // All controls are always visible; the ENABLE switch above just turns enforcement on.
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { toggleAllTime() }.padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .toggleable(value = uiState.doomscrollAllTime, role = Role.Switch, onValueChange = { toggleAllTime() })
+                        .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("RESTRICT ALL DAY", color = if (uiState.doomscrollAllTime) MonospaceText else SubtextGrey, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         Switch(
                             checked = uiState.doomscrollAllTime,
-                            onCheckedChange = { toggleAllTime() },
+                            onCheckedChange = null,
                             colors = SwitchDefaults.colors(checkedThumbColor = LightGraphiteBg, checkedTrackColor = MonospaceText, checkedBorderColor = OutlineAccent, uncheckedThumbColor = OutlineAccent, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = OutlineAccent)
                         )
                     }
@@ -3276,16 +3293,7 @@ fun QuietHoursConfigDialog(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "X",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { onDismiss() }
-                            .padding(4.dp)
-                    )
+                    DialogCloseX(onDismiss = onDismiss)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -3556,16 +3564,7 @@ fun BindingVowConfigDialog(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "X",
-                        color = MonospaceText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { onDismiss() }
-                            .padding(4.dp)
-                    )
+                    DialogCloseX(onDismiss = onDismiss)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -3756,6 +3755,29 @@ fun ConfirmDialog(
 }
 
 /**
+ * Dialog close control ("X") sized to the 48dp minimum touch target and labelled "Close" for
+ * TalkBack. The visible glyph stays small; only the tappable area grows.
+ */
+@Composable
+private fun DialogCloseX(onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(onClick = onDismiss)
+            .semantics(mergeDescendants = true) { contentDescription = "Close" },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "X",
+            color = MonospaceText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+/**
  * Custom In-App Toast Banner Component.
  */
 @Composable
@@ -3784,16 +3806,21 @@ fun InAppToastBanner(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            Text(
-                text = "[X]",
-                color = SubtextGrey,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
+            Box(
                 modifier = Modifier
-                    .clickable { onDismiss() }
-                    .padding(start = 8.dp)
-            )
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .clickable(onClick = onDismiss)
+                    .semantics(mergeDescendants = true) { contentDescription = "Dismiss" },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "[X]",
+                    color = SubtextGrey,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

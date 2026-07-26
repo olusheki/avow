@@ -32,6 +32,10 @@ class MainViewModel @JvmOverloads constructor(
 
     // Guards the one-time full reconciliation so ongoing DataStore emissions take the light path.
     private var hasLoadedOnce = false
+    // Last pop-out-penalty nonce we've folded into the live countdown. When the service extends the
+    // vow, it bumps this nonce; a change means we must re-read the (now longer) REMAINING so the
+    // ticker doesn't keep expiring at the old time.
+    private var lastPenaltyNonce = 0L
 
     init {
         loadInstalledApps()
@@ -57,15 +61,16 @@ class MainViewModel @JvmOverloads constructor(
                 addCategory(Intent.CATEGORY_LAUNCHER)
             }
             val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
-            // Never offer aVow itself as a blockable target — blocking it would lock the user out of
-            // the very app they need to lift the vow. Filtering here covers every picker (onboarding
-            // and config both read installedApps) and both flavors (com.avow.app / .plus).
-            val selfPackage = getApplication<Application>().packageName
+            // Never offer aVow itself, the launcher, or the dialer as blockable targets — blocking
+            // any of those can lock the user out of their own phone (or out of the very app they need
+            // to lift the vow). Filtering here covers every picker (onboarding and config both read
+            // installedApps) and both flavors; enforcement guards on the same set as a safety net.
+            val neverBlockable = com.avow.app.util.BlockGuard.neverBlockablePackages(getApplication())
             val list = resolveInfos.map {
                 val packageName = it.activityInfo.packageName
                 val label = it.loadLabel(pm).toString()
                 packageName to label
-            }.filter { it.first != selfPackage }.distinctBy { it.first }.sortedBy { it.second }
+            }.filterNot { it.first in neverBlockable }.distinctBy { it.first }.sortedBy { it.second }
 
             val apps = if (list.isEmpty()) {
                 listOf(
@@ -108,9 +113,24 @@ class MainViewModel @JvmOverloads constructor(
             applyInitialLoad(prefs)
             return
         }
-        val lockoutEnd = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+        // Pop-out penalty: the service extended the vow underneath us. Re-read the longer REMAINING
+        // into the live countdown (the ticker owns the digits, so a plain copy wouldn't move them),
+        // and tell the user why their time went up.
+        val penaltyNonce = prefs[VowDataStore.EVASION_PENALTY_NONCE] ?: 0L
+        if (penaltyNonce != lastPenaltyNonce) {
+            lastPenaltyNonce = penaltyNonce
+            showToast("Pop-out caught — 1 hour added to your vow.")
+            applyInitialLoad(prefs)
+            return
+        }
+        val lockoutEnd = VowValidator.sanitizeLockoutEnd(
+            prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+        )
         val doomAcc = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
-        _uiState.update { it.copy(temporaryLockoutEndTime = lockoutEnd, doomscrollAccumulatedMs = doomAcc) }
+        val reason = prefs[VowDataStore.TEMPORARY_LOCKOUT_REASON] ?: ""
+        _uiState.update {
+            it.copy(temporaryLockoutEndTime = lockoutEnd, doomscrollAccumulatedMs = doomAcc, lockoutReason = reason)
+        }
     }
 
     /**
@@ -119,6 +139,9 @@ class MainViewModel @JvmOverloads constructor(
      */
     private fun applyInitialLoad(prefs: Preferences) {
         hasLoadedOnce = true
+        // Seed the penalty nonce synchronously so a penalty applied before this load isn't re-toasted
+        // (the extended REMAINING is already read below).
+        lastPenaltyNonce = prefs[VowDataStore.EVASION_PENALTY_NONCE] ?: 0L
         viewModelScope.launch {
             try {
                 val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
@@ -143,7 +166,12 @@ class MainViewModel @JvmOverloads constructor(
                 val vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
                 val vowInitialDurationSeconds = prefs[VowDataStore.VOW_INITIAL_DURATION_SECONDS] ?: 0L
                 val vpnDomainBlockingEnabled = prefs[VowDataStore.VPN_DOMAIN_BLOCKING_ENABLED] ?: false
-                val temporaryLockoutEndTime = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+                // Discard a reboot-stale lockout end (elapsedRealtime from a prior boot reads far in
+                // the future) so the UI never opens on a phantom cooldown screen.
+                val temporaryLockoutEndTime = VowValidator.sanitizeLockoutEnd(
+                    prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+                )
+                val lockoutReason = prefs[VowDataStore.TEMPORARY_LOCKOUT_REASON] ?: ""
                 val doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 val doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 val doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -298,6 +326,7 @@ class MainViewModel @JvmOverloads constructor(
                         vowStartTimeMs = vowStartTimeMs,
                         vowInitialDurationSeconds = vowInitialDurationSeconds,
                         temporaryLockoutEndTime = temporaryLockoutEndTime,
+                        lockoutReason = lockoutReason,
                         currentState = if (state.currentState == ScreenState.INTRUSION_INTERCEPT || state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
                             if (currentState == ScreenState.TEMPORARY_LOCKOUT) {
                                 currentState
@@ -510,18 +539,23 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun enterTemporaryLockout() {
         viewModelScope.launch {
-            val end = try {
-                vowDataStore.preferencesFlow.first()[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+            val prefs = try {
+                vowDataStore.preferencesFlow.first()
             } catch (e: Exception) {
-                Log.e("MainViewModel", "Failed to read lockout end time", e)
-                0L
+                Log.e("MainViewModel", "Failed to read lockout state", e)
+                null
             }
-            // Set end time and screen state together so the ticker's exit check never sees the
-            // lockout screen with a still-unloaded (zero) end time.
+            val end = VowValidator.sanitizeLockoutEnd(
+                prefs?.get(VowDataStore.TEMPORARY_LOCKOUT_END_TIME) ?: 0L, SystemClock.elapsedRealtime()
+            )
+            val reason = prefs?.get(VowDataStore.TEMPORARY_LOCKOUT_REASON) ?: ""
+            // Set end time, reason, and screen state together so the ticker's exit check never sees
+            // the lockout screen with a still-unloaded (zero) end time.
             updateState {
                 copy(
                     previousState = if (currentState == ScreenState.TEMPORARY_LOCKOUT) previousState else currentState,
                     temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, end),
+                    lockoutReason = reason,
                     currentState = ScreenState.TEMPORARY_LOCKOUT
                 )
             }

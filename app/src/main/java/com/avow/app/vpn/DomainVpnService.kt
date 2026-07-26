@@ -199,13 +199,14 @@ class DomainVpnService : VpnService() {
             this, 0, Intent(this, MainActivity::class.java),
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        // Shared aVow branding (mascot small/large icon + sage accent) instead of the raw launcher
+        // mipmap, which renders as a muddy blob in the status bar.
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.vpn_title))
             .setContentText(getString(R.string.vpn_text))
             .setOngoing(true)
             .setContentIntent(pi)
-            .build()
+        return com.avow.app.util.NotificationStyle.applyBranding(builder, this).build()
     }
 
     private fun teardown() {

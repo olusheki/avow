@@ -6,10 +6,14 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.avow.app.MainActivity
 import com.avow.app.data.VowDataStore
+import com.avow.app.enforcement.CapabilitiesFactory
+import com.avow.app.enforcement.EnforcementCapabilities
 import com.avow.app.model.VowBlock
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.retryWhen
 import kotlin.concurrent.withLock
 import java.util.Calendar
 import android.app.NotificationChannel
@@ -24,7 +28,9 @@ class BlockerService : AccessibilityService() {
 
     companion object {
         private const val TAG = "BlockerService"
-        
+        // Lite pop-out/split penalty: one hour added to the active vow, once per vow.
+        private const val EVASION_PENALTY_SECONDS = 3600L
+
         private val SETTINGS_PACKAGES = setOf(
             "com.android.settings",
             "com.samsung.android.settings",
@@ -96,6 +102,16 @@ class BlockerService : AccessibilityService() {
     @Volatile private var currentForegroundPackage = ""
     @Volatile private var currentBrowserUrl = ""
     @Volatile private var vowBlocks = emptyList<VowBlock>()
+    // The launcher/dialer/self set that must never be blocked (see BlockGuard). Resolved in onCreate.
+    @Volatile private var neverBlockablePackages = emptySet<String>()
+    // Full flavor only: packages currently suspended to kill a pop-out/split evasion (device owner).
+    // Persisted so a process death can't strand a suspended app; null caps in unit tests skip it.
+    @Volatile private var evasionSuspendedPackages = emptySet<String>()
+    // Lite pop-out penalty bookkeeping: the running vow's start time, and the vow-start already
+    // penalized (in-memory fast-path for the once-per-vow guard; the DataStore edit is authoritative).
+    @Volatile private var vowStartTimeMs = 0L
+    @Volatile private var evasionPenalizedVowStart = 0L
+    private var capabilities: EnforcementCapabilities? = null
     private lateinit var vowDataStore: VowDataStore
 
     private val userPresentReceiver = object : android.content.BroadcastReceiver() {
@@ -170,6 +186,10 @@ class BlockerService : AccessibilityService() {
         super.onCreate()
         vowDataStore = VowDataStore(this)
         selfLabel = try { getString(com.avow.app.R.string.app_name) } catch (e: Throwable) { "aVow" }
+        neverBlockablePackages = try {
+            com.avow.app.util.BlockGuard.neverBlockablePackages(this)
+        } catch (e: Throwable) { setOf(packageName) }
+        capabilities = try { CapabilitiesFactory.create(this) } catch (e: Throwable) { null }
         val presenceFilter = android.content.IntentFilter().apply {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -188,7 +208,17 @@ class BlockerService : AccessibilityService() {
 
         // Collect DataStore flow asynchronously to maintain in-memory cache
         serviceScope.launch {
-            vowDataStore.preferencesFlow.collect { prefs ->
+            vowDataStore.preferencesFlow
+                // A direct-boot read (device still PIN-locked after a reboot) of the credential-
+                // encrypted DataStore can throw. Without a retry the collector would die for the
+                // whole process lifetime, silently disabling enforcement until the service restarts.
+                // Back off and re-subscribe so it recovers once the user unlocks.
+                .retryWhen { cause, _ ->
+                    Log.e(TAG, "Config collector failed; retrying in 5s", cause)
+                    delay(5000L)
+                    true
+                }
+                .collect { prefs ->
                 val activeNow = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false
                 
                 isVowActive = activeNow
@@ -218,7 +248,15 @@ class BlockerService : AccessibilityService() {
                 doomscrollAccumulatedMs = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
                 // The service's in-memory value is authoritative while running: persisted saves are
                 // async and unordered, so a disk value must never shrink an already-enforced lockout.
-                temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L)
+                // Sanitize the disk value first: a reboot-stale elapsedRealtime carried from a prior
+                // boot reads far in the future and would phantom-lock target apps for hours/days.
+                val diskLockoutEnd = com.avow.app.util.VowValidator.sanitizeLockoutEnd(
+                    prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+                )
+                temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, diskLockoutEnd)
+                evasionSuspendedPackages = prefs[VowDataStore.EVASION_SUSPENDED_PACKAGES] ?: emptySet()
+                vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
+                evasionPenalizedVowStart = prefs[VowDataStore.EVASION_PENALIZED_VOW_START] ?: 0L
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -233,6 +271,12 @@ class BlockerService : AccessibilityService() {
                 vowBlocks = VowBlock.deserializeList(blocksJson)
 
                 manageAllowedTimeTracking()
+
+                // Mirror the actual package-suspension state to the persisted evasion set: keep it
+                // suspended while the cooldown runs, release it once the cooldown lifts. Reconciling
+                // here (on every config emission, including service start) is the process-death safety
+                // net that guarantees a suspended app is never stranded.
+                reconcileEvasionSuspension()
 
                 // Import persisted usage only when seeding (service start / between vows). While a
                 // vow runs, the in-memory cache is authoritative — re-importing our own async
@@ -404,11 +448,26 @@ class BlockerService : AccessibilityService() {
                 }
             }
 
-            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
                 pkgChanged ||
-                (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && 
+                (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
                  (pkgName == "com.android.chrome" || pkgName == "com.sec.android.app.sbrowser"))) {
                 manageTrackingJob()
+            }
+
+            // Pop-out / side-by-side evasion: dragging a blocked app into a Picture-in-Picture window
+            // or a split-screen pane keeps it running while a *different* app is "foreground", dodging
+            // every currentForegroundPackage check below. Scan the on-screen windows for a restricted
+            // target hiding in one of those, and answer with the temporary cooldown lockout — a
+            // bounded, self-lifting consequence that applies to every block type (quiet hours, usage,
+            // doomscroll), not just doomscroll. Runs before the enforcement-active return so a
+            // doomscroll-only shield (no vow) still catches it; gated to window-state changes.
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                val evadingPkg = restrictedPackageInAuxWindow()
+                if (evadingPkg != null) {
+                    respondToEvasion(evadingPkg)
+                    return
+                }
             }
 
             // Enforce when a vow is running OR the user chose Active mode (rules apply without a vow).
@@ -605,6 +664,7 @@ class BlockerService : AccessibilityService() {
 
     private fun isBlockRestrictedAppPackage(block: VowBlock, pkgName: String): Boolean {
         if (!isEnforcementActive) return false
+        if (pkgName in neverBlockablePackages) return false
         return block.targetApps.contains(pkgName)
     }
 
@@ -613,12 +673,168 @@ class BlockerService : AccessibilityService() {
         return isTargetAppPackage(pkgName)
     }
 
+    // The three target-set checks below all funnel through the never-blockable guard: blocking the
+    // launcher or dialer could brick the phone into an aVow-only device for the length of a vow.
     private fun isTargetAppPackage(pkgName: String): Boolean {
+        if (pkgName in neverBlockablePackages) return false
         return targetAppSet.contains(pkgName)
     }
 
     private fun isDoomscrollTargetApp(pkgName: String): Boolean {
+        if (pkgName in neverBlockablePackages) return false
         return doomscrollTargetApps.contains(pkgName)
+    }
+
+    /**
+     * True if [pkg] is under an active *binary* (window-based) restriction right now — an enabled
+     * scheduled block inside its window, or the doomscroll shield inside its window. These are the
+     * blocks that are simply on/off by time, so a target caught evading them via a pop-out/split
+     * window is unambiguously cheating. Usage limits are deliberately excluded: they're metered, and
+     * an aux window we can't meter shouldn't hard-lock a user who may still be under their budget.
+     */
+    private fun isBinaryRestrictedNow(pkg: String): Boolean {
+        if (isEnforcementActive) {
+            for (block in vowBlocks) {
+                if (block.isEnabled &&
+                    isBlockRestrictedAppPackage(block, pkg) &&
+                    isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin)) {
+                    return true
+                }
+            }
+        }
+        if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkg)) {
+            val windowActive = doomscrollAllTime || isCurrentTimeInQuietHours(
+                doomscrollStartHour, doomscrollStartMin, doomscrollEndHour, doomscrollEndMin
+            )
+            if (windowActive) return true
+        }
+        return false
+    }
+
+    /**
+     * Returns a restricted target hiding in a Picture-in-Picture window or a split-screen pane whose
+     * restriction is currently in force, or null. This closes the pop-out/side-by-side bypass: such a
+     * target keeps running while a *different* app is foreground, so the foreground-based checks never
+     * see it. The caller answers with the temporary cooldown lockout.
+     *
+     * We can only detect and impose a consequence — there is no public API to force another app out
+     * of PiP — so evasion becomes a bounded lockout rather than a dismissed window. Requires
+     * flagRetrieveInteractiveWindows (accessibility_service_config.xml).
+     *
+     * NOTE: not fully device-verified — getWindows()/PiP/split reporting varies by OEM. Fail-soft
+     * (any error yields null, i.e. no false lockout).
+     */
+    private fun restrictedPackageInAuxWindow(): String? {
+        if (!isEnforcementActive && !doomscrollShieldEnabled) return null
+        val wins = try { windows } catch (e: Throwable) { return null } ?: return null
+        // Two or more application windows on screen ≈ split-screen (or freeform); one is just normal
+        // fullscreen and handled by the foreground path.
+        val appWindowCount = wins.count {
+            try { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } catch (e: Throwable) { false }
+        }
+        val splitScreen = appWindowCount >= 2
+        for (w in wins) {
+            val inPip = try { w.isInPictureInPictureMode } catch (e: Throwable) { false }
+            val isApp = try { w.type == AccessibilityWindowInfo.TYPE_APPLICATION } catch (e: Throwable) { false }
+            // Only the evading windows: a PiP pop-out, or a split-screen pane. Plain fullscreen apps
+            // are already covered by the normal foreground checks.
+            if (!inPip && !(splitScreen && isApp)) continue
+            val root = try { w.root } catch (e: Throwable) { null } ?: continue
+            val pkg = try {
+                root.packageName?.toString()
+            } catch (e: Throwable) { null } finally {
+                try { root.recycle() } catch (_: Throwable) {}
+            }
+            if (pkg.isNullOrEmpty()) continue
+            // The tracked foreground app is handled by the normal path; only flag it here when it's
+            // truly evading — a PiP window (never the foreground) or a *second* split-screen pane.
+            if (!inPip && pkg == currentForegroundPackage) continue
+            if (isBinaryRestrictedNow(pkg)) return pkg
+        }
+        return null
+    }
+
+    /**
+     * Routes a detected pop-out/split evasion to the right consequence:
+     *  - **Lite + a running vow** → add one hour to the vow, once per vow (the user can keep using the
+     *    pop-out, but it cost them the time). The bounded cooldown lockout doesn't apply here.
+     *  - **Full flavor**, or **lite with no vow to extend** (Active mode / doomscroll only) → the
+     *    existing cooldown lockout (which on full also suspends the app). Full behaviour is unchanged.
+     */
+    private fun respondToEvasion(pkg: String) {
+        val fullFlavor = capabilities?.supportsDeviceOwnerFeatures == true
+        if (!fullFlavor && isVowActive && vowStartTimeMs != 0L) {
+            // Fast in-memory guard so a burst of window events doesn't hammer the DataStore; the edit
+            // inside applyEvasionVowPenalty is the authoritative once-per-vow check.
+            if (vowStartTimeMs == evasionPenalizedVowStart) return
+            serviceScope.launch {
+                if (vowDataStore.applyEvasionVowPenalty(EVASION_PENALTY_SECONDS)) {
+                    evasionPenalizedVowStart = vowStartTimeMs
+                    showEvasionPenaltyNotification()
+                }
+            }
+            return
+        }
+        triggerEvasionLockout(pkg)
+    }
+
+    /**
+     * Imposes the temporary cooldown lockout when pop-out/split-screen evasion is detected by [pkg].
+     * Reuses the doomscroll cooldown duration and the same bounded, self-lifting lockout screen, but
+     * tags it with the EVASION reason. In-memory first so the app-launch intercept reads it
+     * immediately; never shrinks a lockout already running.
+     *
+     * On the full flavor (Device Owner) it *also* suspends [pkg] so the pop-out can't keep running —
+     * the one route that actually prevents it. The suspension is bounded to the cooldown and released
+     * by [reconcileEvasionSuspension]; lite / non-owner gets the cooldown lockout alone.
+     */
+    private fun triggerEvasionLockout(pkg: String) {
+        val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
+        val endTime = maxOf(temporaryLockoutEndTime, SystemClock.elapsedRealtime() + cooldownMs)
+        temporaryLockoutEndTime = endTime
+        serviceScope.launch {
+            vowDataStore.saveTemporaryLockoutEndTime(endTime, VowDataStore.LOCKOUT_REASON_EVASION)
+        }
+
+        val caps = capabilities
+        if (caps != null && caps.isDeviceOwnerActive && pkg !in neverBlockablePackages) {
+            caps.setAppsSuspended(setOf(pkg), true)
+            evasionSuspendedPackages = evasionSuspendedPackages + pkg
+            val snapshot = evasionSuspendedPackages
+            serviceScope.launch { vowDataStore.saveEvasionSuspendedPackages(snapshot) }
+            scheduleEvasionRelease(endTime)
+        }
+
+        triggerLockoutOverlay()
+    }
+
+    /** Waits out the cooldown, then reconciles — releasing the suspension if it has truly lifted. */
+    private fun scheduleEvasionRelease(endTime: Long) {
+        serviceScope.launch {
+            val waitMs = endTime - SystemClock.elapsedRealtime()
+            if (waitMs > 0L) delay(waitMs + 500L)
+            reconcileEvasionSuspension()
+        }
+    }
+
+    /**
+     * Makes the real package-suspension state match the cooldown: while an evasion cooldown is
+     * running the tracked packages stay suspended; once it lifts they are un-suspended and the
+     * persisted set cleared. Idempotent and driven off the persisted set (not the live target
+     * config), so a suspended app is released even if the user later edits their targets.
+     */
+    private fun reconcileEvasionSuspension() {
+        val caps = capabilities ?: return
+        val pkgs = evasionSuspendedPackages
+        if (pkgs.isEmpty()) return
+        if (SystemClock.elapsedRealtime() < temporaryLockoutEndTime) {
+            // Cooldown still running (e.g. re-applied after a process death): keep them suspended.
+            if (caps.isDeviceOwnerActive) caps.setAppsSuspended(pkgs, true)
+        } else {
+            caps.setAppsSuspended(pkgs, false)
+            evasionSuspendedPackages = emptySet()
+            serviceScope.launch { vowDataStore.saveEvasionSuspendedPackages(emptySet()) }
+        }
     }
 
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {
@@ -754,6 +970,42 @@ class BlockerService : AccessibilityService() {
         com.avow.app.util.NotificationStyle.applyBranding(builder, this)
 
         notificationManager.notify(2002, builder.build())
+    }
+
+    /** Heads-up notification telling the user the pop-out cost them an hour on their vow (lite). */
+    private fun showEvasionPenaltyNotification() {
+        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "evasion_penalty_channel"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                getString(com.avow.app.R.string.evasion_penalty_channel_name),
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = getString(com.avow.app.R.string.evasion_penalty_channel_description)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 1004, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val text = getString(com.avow.app.R.string.evasion_penalty_text)
+        val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setContentTitle(getString(com.avow.app.R.string.evasion_penalty_title))
+            .setContentText(text)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+        com.avow.app.util.NotificationStyle.applyBranding(builder, this)
+
+        notificationManager.notify(2004, builder.build())
     }
 
     /**
@@ -971,6 +1223,15 @@ class BlockerService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        // Best-effort release of any evasion suspension so tearing the service down (e.g. the user
+        // turns accessibility off) can never strand a suspended app with no service left to release
+        // it. If the service returns mid-cooldown, the collector's reconcile re-applies it.
+        try {
+            val pkgs = evasionSuspendedPackages
+            if (pkgs.isNotEmpty()) capabilities?.setAppsSuspended(pkgs, false)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to release evasion suspension on destroy", e)
+        }
         super.onDestroy()
         try {
             unregisterReceiver(userPresentReceiver)

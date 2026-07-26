@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.UserManager
 import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,13 @@ import kotlinx.coroutines.flow.first
 import com.avow.app.util.VowValidator
 import com.avow.app.worker.ReminderInputs
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vow_settings")
+// A corrupt prefs file would otherwise make every read/write throw forever, hard-bricking the app.
+// Fail OPEN: replace it with empty prefs (which validate as a clean first-launch state, no tamper
+// escalation) — losing an in-flight vow is the safe direction versus a permanently unusable app.
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "vow_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 class VowDataStore(private val context: Context) {
 
@@ -23,6 +30,12 @@ class VowDataStore(private val context: Context) {
         // AndroidKeyStore key), which is indistinguishable from real tampering. First detection now
         // applies a *softened* 24h lockout instead of the former 7-day one, plus a clear notification.
         const val TAMPER_LOCKOUT_SECONDS = 24L * 3600L
+
+        // Why a temporary lockout is showing, so the overlay can word itself correctly. Cosmetic /
+        // not security-signed. DOOMSCROLL = the scroll allowance ran out; EVASION = a blocked app was
+        // caught running in a pop-out / side-by-side window to dodge enforcement.
+        const val LOCKOUT_REASON_DOOMSCROLL = "DOOMSCROLL"
+        const val LOCKOUT_REASON_EVASION = "EVASION"
 
         val IS_VOW_ACTIVE = booleanPreferencesKey("is_vow_active")
         val IS_ACTIVE_VOW_MODE = booleanPreferencesKey("is_active_vow_mode")
@@ -63,6 +76,8 @@ class VowDataStore(private val context: Context) {
         // reboot (uptime restarts near zero) and BootReceiver clears it. Read/enforced across
         // BlockerService, MainViewModel, and BootReceiver; keep all comparisons on elapsedRealtime.
         val TEMPORARY_LOCKOUT_END_TIME = longPreferencesKey("temporary_lockout_end_time")
+        // Cosmetic reason string for the active temporary lockout (not part of the tamper signature).
+        val TEMPORARY_LOCKOUT_REASON = stringPreferencesKey("temporary_lockout_reason")
         val VOW_START_TIME_MS = longPreferencesKey("vow_start_time_ms")
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")
         val VOW_PICKUPS_COUNT = intPreferencesKey("vow_pickups_count")
@@ -82,6 +97,14 @@ class VowDataStore(private val context: Context) {
         // Idle-nudge bookkeeping (not security-signed): last app open + last reminder shown.
         val LAST_APP_OPEN_MS = longPreferencesKey("last_app_open_ms")
         val LAST_REMINDER_SHOWN_MS = longPreferencesKey("last_reminder_shown_ms")
+        // Packages the full flavor suspended for pop-out/split evasion (not security-signed). Persisted
+        // so the service can un-suspend them after a process death even if the target set later changes.
+        val EVASION_SUSPENDED_PACKAGES = stringSetPreferencesKey("evasion_suspended_packages")
+        // Lite pop-out penalty bookkeeping. VOW_START_TIME of the vow already penalized (once per vow),
+        // and a nonce the ViewModel watches to re-sync its live countdown after the service extends the
+        // persisted vow. Not security-signed (the extended REMAINING/anchor they piggyback on IS signed).
+        val EVASION_PENALIZED_VOW_START = longPreferencesKey("evasion_penalized_vow_start")
+        val EVASION_PENALTY_NONCE = longPreferencesKey("evasion_penalty_nonce")
     }
  
     /**
@@ -316,8 +339,14 @@ class VowDataStore(private val context: Context) {
     /** The softened tamper/key-loss fallback state (D-3): a 24h vow floor + the protective locks. */
     private fun applyTamperLockout(prefs: MutablePreferences) {
         prefs[IS_VOW_ACTIVE] = true
-        prefs[IS_ACTIVE_VOW_MODE] = true
+        // Deliberately NOT forcing IS_ACTIVE_VOW_MODE: the 24h vow floor alone makes enforcement
+        // active for the window, and clearVowConfig preserves Active mode — so forcing it here would
+        // strand a blameless user (an OS update can invalidate the key) in permanent Active mode
+        // after the lockout lifts.
         prefs[REMAINING_VOW_SECONDS] = maxOf(prefs[REMAINING_VOW_SECONDS] ?: 0L, TAMPER_LOCKOUT_SECONDS)
+        // Anchor the countdown to NOW, or the "24h" is measured against a stale uptime and can read
+        // as already-elapsed (instant, toothless expiry) or otherwise mis-count.
+        prefs[LAST_SYSTEM_UPTIME_MILLIS] = android.os.SystemClock.elapsedRealtime()
         prefs[SECURE_FOLDER_ENABLED] = true
         prefs[PRIVATE_SPACE_ENABLED] = true
         prefs[LOCK_UNINSTALL] = true
@@ -468,6 +497,34 @@ class VowDataStore(private val context: Context) {
         }
     }
 
+    /**
+     * Lite pop-out/split penalty: adds [penaltySeconds] to the *current* vow (re-anchoring the
+     * countdown to now) and bumps [EVASION_PENALTY_NONCE] so a running ViewModel re-syncs its live
+     * countdown — otherwise the ViewModel's ticker would expire the vow at the original time and the
+     * penalty would be silently defeated. Applied at most once per vow (keyed on VOW_START_TIME), and
+     * only while a real, running vow exists. Returns true iff a penalty was actually applied.
+     */
+    suspend fun applyEvasionVowPenalty(penaltySeconds: Long): Boolean {
+        var applied = false
+        context.dataStore.edit { prefs ->
+            if (prefs[IS_VOW_ACTIVE] != true) return@edit
+            val vowStart = prefs[VOW_START_TIME_MS] ?: 0L
+            if (vowStart == 0L) return@edit                       // no vow identity to guard once-per-vow
+            if (prefs[EVASION_PENALIZED_VOW_START] == vowStart) return@edit  // already penalized this vow
+            val now = android.os.SystemClock.elapsedRealtime()
+            val live = VowValidator.calculateRemainingSeconds(now, prefs[LAST_SYSTEM_UPTIME_MILLIS] ?: 0L, prefs[REMAINING_VOW_SECONDS] ?: 0L)
+            if (live <= 0L) return@edit                           // vow effectively over; nothing to extend
+            prefs[REMAINING_VOW_SECONDS] = VowValidator.clampRemainingSeconds(live + penaltySeconds)
+            prefs[LAST_SYSTEM_UPTIME_MILLIS] = now
+            prefs[VOW_INITIAL_DURATION_SECONDS] = (prefs[VOW_INITIAL_DURATION_SECONDS] ?: 0L) + penaltySeconds
+            prefs[EVASION_PENALIZED_VOW_START] = vowStart
+            prefs[EVASION_PENALTY_NONCE] = System.currentTimeMillis()
+            prefs[STATE_SIGNATURE] = computeSignatureFromPrefs(prefs)
+            applied = true
+        }
+        return applied
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[IS_ONBOARDING_COMPLETED] = completed
@@ -483,10 +540,21 @@ class VowDataStore(private val context: Context) {
         }
     }
 
-    suspend fun saveTemporaryLockoutEndTime(endTime: Long) {
+    suspend fun saveTemporaryLockoutEndTime(endTime: Long, reason: String = LOCKOUT_REASON_DOOMSCROLL) {
         context.dataStore.edit { preferences ->
             preferences[TEMPORARY_LOCKOUT_END_TIME] = endTime
+            // Clearing the lockout (endTime <= 0) drops the reason; otherwise record why it fired.
+            if (endTime <= 0L) preferences.remove(TEMPORARY_LOCKOUT_REASON)
+            else preferences[TEMPORARY_LOCKOUT_REASON] = reason
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
+    /** Records which packages the full flavor currently has suspended for evasion (empty = none). */
+    suspend fun saveEvasionSuspendedPackages(packages: Set<String>) {
+        context.dataStore.edit { preferences ->
+            if (packages.isEmpty()) preferences.remove(EVASION_SUSPENDED_PACKAGES)
+            else preferences[EVASION_SUSPENDED_PACKAGES] = packages
         }
     }
 
