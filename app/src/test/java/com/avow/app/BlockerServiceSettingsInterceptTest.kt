@@ -511,6 +511,70 @@ class BlockerServiceSettingsInterceptTest {
     }
 
     @Test
+    fun testEvasionSuspendsTargetWhenDeviceOwner() {
+        // GIVEN: full flavor, Device Owner active, and a doomscroll target caught in PiP.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the evading app is actually suspended (the full-flavor "prevent" path).
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), true) }
+    }
+
+    @Test
+    fun testReconcileReleasesSuspensionWhenCooldownExpired() {
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+        setField("evasionSuspendedPackages", setOf("com.instagram.android"))
+        setField("temporaryLockoutEndTime", 0L) // no active cooldown (elapsedRealtime is 0 in tests)
+
+        val m = BlockerService::class.java.getDeclaredMethod("reconcileEvasionSuspension")
+        m.isAccessible = true
+        m.invoke(service)
+
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), false) }
+    }
+
+    @Test
+    fun testReconcileKeepsSuspensionWhileCooldownActive() {
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.isDeviceOwnerActive } returns true
+        setField("capabilities", caps)
+        setField("evasionSuspendedPackages", setOf("com.instagram.android"))
+        setField("temporaryLockoutEndTime", 60_000L) // cooldown still running
+
+        val m = BlockerService::class.java.getDeclaredMethod("reconcileEvasionSuspension")
+        m.isAccessible = true
+        m.invoke(service)
+
+        verify(exactly = 0) { caps.setAppsSuspended(any(), false) }
+        verify { caps.setAppsSuspended(setOf("com.instagram.android"), true) }
+    }
+
+    @Test
     fun testNonTargetInPictureInPictureIsIgnored() {
         // GIVEN: the shield is on for Instagram, but a non-target app (a video player) is in PiP —
         // legitimate PiP must not be blocked.

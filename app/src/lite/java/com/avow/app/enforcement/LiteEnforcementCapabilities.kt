@@ -25,4 +25,7 @@ class LiteEnforcementCapabilities(context: Context) : EnforcementCapabilities {
     ): String? = null
 
     override fun deactivateDeviceOwner(): String? = null
+
+    // No device-owner powers in lite: pop-out evasion falls back to the cooldown lockout alone.
+    override fun setAppsSuspended(packages: Set<String>, suspended: Boolean) = Unit
 }

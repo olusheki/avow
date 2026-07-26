@@ -39,4 +39,7 @@ class FullEnforcementCapabilities(private val context: Context) : EnforcementCap
     )
 
     override fun deactivateDeviceOwner(): String? = DeviceAdmin.deactivateDeviceOwner(context)
+
+    override fun setAppsSuspended(packages: Set<String>, suspended: Boolean) =
+        DeviceAdmin.setAppsSuspended(context, packages, suspended)
 }

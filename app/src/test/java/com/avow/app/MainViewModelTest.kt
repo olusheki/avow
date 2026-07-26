@@ -59,6 +59,7 @@ class MainViewModelTest {
             blockPlayStore: Boolean, deactivateUsbDebugging: Boolean
         ): String? { assertActivations.add(activate); return null }
         override fun deactivateDeviceOwner(): String? = null
+        override fun setAppsSuspended(packages: Set<String>, suspended: Boolean) {}
     }
 
     /**
@@ -90,6 +91,7 @@ class MainViewModelTest {
             blockPlayStore: Boolean, deactivateUsbDebugging: Boolean
         ): String? = null
         override fun deactivateDeviceOwner(): String? = null
+        override fun setAppsSuspended(packages: Set<String>, suspended: Boolean) {}
     }
 
     @Before

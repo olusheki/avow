@@ -9,6 +9,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.avow.app.MainActivity
 import com.avow.app.data.VowDataStore
+import com.avow.app.enforcement.CapabilitiesFactory
+import com.avow.app.enforcement.EnforcementCapabilities
 import com.avow.app.model.VowBlock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.retryWhen
@@ -100,6 +102,10 @@ class BlockerService : AccessibilityService() {
     @Volatile private var vowBlocks = emptyList<VowBlock>()
     // The launcher/dialer/self set that must never be blocked (see BlockGuard). Resolved in onCreate.
     @Volatile private var neverBlockablePackages = emptySet<String>()
+    // Full flavor only: packages currently suspended to kill a pop-out/split evasion (device owner).
+    // Persisted so a process death can't strand a suspended app; null caps in unit tests skip it.
+    @Volatile private var evasionSuspendedPackages = emptySet<String>()
+    private var capabilities: EnforcementCapabilities? = null
     private lateinit var vowDataStore: VowDataStore
 
     private val userPresentReceiver = object : android.content.BroadcastReceiver() {
@@ -177,6 +183,7 @@ class BlockerService : AccessibilityService() {
         neverBlockablePackages = try {
             com.avow.app.util.BlockGuard.neverBlockablePackages(this)
         } catch (e: Throwable) { setOf(packageName) }
+        capabilities = try { CapabilitiesFactory.create(this) } catch (e: Throwable) { null }
         val presenceFilter = android.content.IntentFilter().apply {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -241,6 +248,7 @@ class BlockerService : AccessibilityService() {
                     prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
                 )
                 temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, diskLockoutEnd)
+                evasionSuspendedPackages = prefs[VowDataStore.EVASION_SUSPENDED_PACKAGES] ?: emptySet()
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -255,6 +263,12 @@ class BlockerService : AccessibilityService() {
                 vowBlocks = VowBlock.deserializeList(blocksJson)
 
                 manageAllowedTimeTracking()
+
+                // Mirror the actual package-suspension state to the persisted evasion set: keep it
+                // suspended while the cooldown runs, release it once the cooldown lifts. Reconciling
+                // here (on every config emission, including service start) is the process-death safety
+                // net that guarantees a suspended app is never stranded.
+                reconcileEvasionSuspension()
 
                 // Import persisted usage only when seeding (service start / between vows). While a
                 // vow runs, the in-memory cache is authoritative — re-importing our own async
@@ -441,8 +455,9 @@ class BlockerService : AccessibilityService() {
             // doomscroll), not just doomscroll. Runs before the enforcement-active return so a
             // doomscroll-only shield (no vow) still catches it; gated to window-state changes.
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                if (restrictedPackageInAuxWindow() != null) {
-                    triggerEvasionLockout()
+                val evadingPkg = restrictedPackageInAuxWindow()
+                if (evadingPkg != null) {
+                    triggerEvasionLockout(evadingPkg)
                     return
                 }
             }
@@ -732,19 +747,62 @@ class BlockerService : AccessibilityService() {
     }
 
     /**
-     * Imposes the temporary cooldown lockout when pop-out/split-screen evasion is detected. Reuses
-     * the doomscroll cooldown duration and the same bounded, self-lifting lockout screen, but tags it
-     * with the EVASION reason so the overlay explains that the block still holds. In-memory first so
-     * the app-launch intercept reads it immediately; never shrinks a lockout already running.
+     * Imposes the temporary cooldown lockout when pop-out/split-screen evasion is detected by [pkg].
+     * Reuses the doomscroll cooldown duration and the same bounded, self-lifting lockout screen, but
+     * tags it with the EVASION reason. In-memory first so the app-launch intercept reads it
+     * immediately; never shrinks a lockout already running.
+     *
+     * On the full flavor (Device Owner) it *also* suspends [pkg] so the pop-out can't keep running —
+     * the one route that actually prevents it. The suspension is bounded to the cooldown and released
+     * by [reconcileEvasionSuspension]; lite / non-owner gets the cooldown lockout alone.
      */
-    private fun triggerEvasionLockout() {
+    private fun triggerEvasionLockout(pkg: String) {
         val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
         val endTime = maxOf(temporaryLockoutEndTime, SystemClock.elapsedRealtime() + cooldownMs)
         temporaryLockoutEndTime = endTime
         serviceScope.launch {
             vowDataStore.saveTemporaryLockoutEndTime(endTime, VowDataStore.LOCKOUT_REASON_EVASION)
         }
+
+        val caps = capabilities
+        if (caps != null && caps.isDeviceOwnerActive && pkg !in neverBlockablePackages) {
+            caps.setAppsSuspended(setOf(pkg), true)
+            evasionSuspendedPackages = evasionSuspendedPackages + pkg
+            val snapshot = evasionSuspendedPackages
+            serviceScope.launch { vowDataStore.saveEvasionSuspendedPackages(snapshot) }
+            scheduleEvasionRelease(endTime)
+        }
+
         triggerLockoutOverlay()
+    }
+
+    /** Waits out the cooldown, then reconciles — releasing the suspension if it has truly lifted. */
+    private fun scheduleEvasionRelease(endTime: Long) {
+        serviceScope.launch {
+            val waitMs = endTime - SystemClock.elapsedRealtime()
+            if (waitMs > 0L) delay(waitMs + 500L)
+            reconcileEvasionSuspension()
+        }
+    }
+
+    /**
+     * Makes the real package-suspension state match the cooldown: while an evasion cooldown is
+     * running the tracked packages stay suspended; once it lifts they are un-suspended and the
+     * persisted set cleared. Idempotent and driven off the persisted set (not the live target
+     * config), so a suspended app is released even if the user later edits their targets.
+     */
+    private fun reconcileEvasionSuspension() {
+        val caps = capabilities ?: return
+        val pkgs = evasionSuspendedPackages
+        if (pkgs.isEmpty()) return
+        if (SystemClock.elapsedRealtime() < temporaryLockoutEndTime) {
+            // Cooldown still running (e.g. re-applied after a process death): keep them suspended.
+            if (caps.isDeviceOwnerActive) caps.setAppsSuspended(pkgs, true)
+        } else {
+            caps.setAppsSuspended(pkgs, false)
+            evasionSuspendedPackages = emptySet()
+            serviceScope.launch { vowDataStore.saveEvasionSuspendedPackages(emptySet()) }
+        }
     }
 
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {
@@ -1097,6 +1155,15 @@ class BlockerService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        // Best-effort release of any evasion suspension so tearing the service down (e.g. the user
+        // turns accessibility off) can never strand a suspended app with no service left to release
+        // it. If the service returns mid-cooldown, the collector's reconcile re-applies it.
+        try {
+            val pkgs = evasionSuspendedPackages
+            if (pkgs.isNotEmpty()) capabilities?.setAppsSuspended(pkgs, false)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to release evasion suspension on destroy", e)
+        }
         super.onDestroy()
         try {
             unregisterReceiver(userPresentReceiver)

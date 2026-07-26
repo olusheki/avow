@@ -97,6 +97,9 @@ class VowDataStore(private val context: Context) {
         // Idle-nudge bookkeeping (not security-signed): last app open + last reminder shown.
         val LAST_APP_OPEN_MS = longPreferencesKey("last_app_open_ms")
         val LAST_REMINDER_SHOWN_MS = longPreferencesKey("last_reminder_shown_ms")
+        // Packages the full flavor suspended for pop-out/split evasion (not security-signed). Persisted
+        // so the service can un-suspend them after a process death even if the target set later changes.
+        val EVASION_SUSPENDED_PACKAGES = stringSetPreferencesKey("evasion_suspended_packages")
     }
  
     /**
@@ -511,6 +514,14 @@ class VowDataStore(private val context: Context) {
             if (endTime <= 0L) preferences.remove(TEMPORARY_LOCKOUT_REASON)
             else preferences[TEMPORARY_LOCKOUT_REASON] = reason
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
+        }
+    }
+
+    /** Records which packages the full flavor currently has suspended for evasion (empty = none). */
+    suspend fun saveEvasionSuspendedPackages(packages: Set<String>) {
+        context.dataStore.edit { preferences ->
+            if (packages.isEmpty()) preferences.remove(EVASION_SUSPENDED_PACKAGES)
+            else preferences[EVASION_SUSPENDED_PACKAGES] = packages
         }
     }
 
