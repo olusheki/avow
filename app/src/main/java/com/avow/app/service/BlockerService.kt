@@ -28,7 +28,9 @@ class BlockerService : AccessibilityService() {
 
     companion object {
         private const val TAG = "BlockerService"
-        
+        // Lite pop-out/split penalty: one hour added to the active vow, once per vow.
+        private const val EVASION_PENALTY_SECONDS = 3600L
+
         private val SETTINGS_PACKAGES = setOf(
             "com.android.settings",
             "com.samsung.android.settings",
@@ -105,6 +107,10 @@ class BlockerService : AccessibilityService() {
     // Full flavor only: packages currently suspended to kill a pop-out/split evasion (device owner).
     // Persisted so a process death can't strand a suspended app; null caps in unit tests skip it.
     @Volatile private var evasionSuspendedPackages = emptySet<String>()
+    // Lite pop-out penalty bookkeeping: the running vow's start time, and the vow-start already
+    // penalized (in-memory fast-path for the once-per-vow guard; the DataStore edit is authoritative).
+    @Volatile private var vowStartTimeMs = 0L
+    @Volatile private var evasionPenalizedVowStart = 0L
     private var capabilities: EnforcementCapabilities? = null
     private lateinit var vowDataStore: VowDataStore
 
@@ -249,6 +255,8 @@ class BlockerService : AccessibilityService() {
                 )
                 temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, diskLockoutEnd)
                 evasionSuspendedPackages = prefs[VowDataStore.EVASION_SUSPENDED_PACKAGES] ?: emptySet()
+                vowStartTimeMs = prefs[VowDataStore.VOW_START_TIME_MS] ?: 0L
+                evasionPenalizedVowStart = prefs[VowDataStore.EVASION_PENALIZED_VOW_START] ?: 0L
                 doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -457,7 +465,7 @@ class BlockerService : AccessibilityService() {
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 val evadingPkg = restrictedPackageInAuxWindow()
                 if (evadingPkg != null) {
-                    triggerEvasionLockout(evadingPkg)
+                    respondToEvasion(evadingPkg)
                     return
                 }
             }
@@ -747,6 +755,30 @@ class BlockerService : AccessibilityService() {
     }
 
     /**
+     * Routes a detected pop-out/split evasion to the right consequence:
+     *  - **Lite + a running vow** → add one hour to the vow, once per vow (the user can keep using the
+     *    pop-out, but it cost them the time). The bounded cooldown lockout doesn't apply here.
+     *  - **Full flavor**, or **lite with no vow to extend** (Active mode / doomscroll only) → the
+     *    existing cooldown lockout (which on full also suspends the app). Full behaviour is unchanged.
+     */
+    private fun respondToEvasion(pkg: String) {
+        val fullFlavor = capabilities?.supportsDeviceOwnerFeatures == true
+        if (!fullFlavor && isVowActive && vowStartTimeMs != 0L) {
+            // Fast in-memory guard so a burst of window events doesn't hammer the DataStore; the edit
+            // inside applyEvasionVowPenalty is the authoritative once-per-vow check.
+            if (vowStartTimeMs == evasionPenalizedVowStart) return
+            serviceScope.launch {
+                if (vowDataStore.applyEvasionVowPenalty(EVASION_PENALTY_SECONDS)) {
+                    evasionPenalizedVowStart = vowStartTimeMs
+                    showEvasionPenaltyNotification()
+                }
+            }
+            return
+        }
+        triggerEvasionLockout(pkg)
+    }
+
+    /**
      * Imposes the temporary cooldown lockout when pop-out/split-screen evasion is detected by [pkg].
      * Reuses the doomscroll cooldown duration and the same bounded, self-lifting lockout screen, but
      * tags it with the EVASION reason. In-memory first so the app-launch intercept reads it
@@ -938,6 +970,42 @@ class BlockerService : AccessibilityService() {
         com.avow.app.util.NotificationStyle.applyBranding(builder, this)
 
         notificationManager.notify(2002, builder.build())
+    }
+
+    /** Heads-up notification telling the user the pop-out cost them an hour on their vow (lite). */
+    private fun showEvasionPenaltyNotification() {
+        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "evasion_penalty_channel"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                getString(com.avow.app.R.string.evasion_penalty_channel_name),
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = getString(com.avow.app.R.string.evasion_penalty_channel_description)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 1004, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val text = getString(com.avow.app.R.string.evasion_penalty_text)
+        val builder = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setContentTitle(getString(com.avow.app.R.string.evasion_penalty_title))
+            .setContentText(text)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+        com.avow.app.util.NotificationStyle.applyBranding(builder, this)
+
+        notificationManager.notify(2004, builder.build())
     }
 
     /**

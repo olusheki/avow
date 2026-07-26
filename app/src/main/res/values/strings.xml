@@ -22,6 +22,12 @@
     <string name="tamper_title">aVow security check</string>
     <string name="tamper_text">Your device\'s security key changed — this often happens after a system update. As a precaution, a 24-hour vow is active. It will lift on its own; no action needed.</string>
 
+    <!-- Pop-out / split-screen evasion penalty notification (BlockerService, lite) -->
+    <string name="evasion_penalty_channel_name">Pop-out penalty</string>
+    <string name="evasion_penalty_channel_description">Notifies when using a blocked app in a pop-out adds time to your vow.</string>
+    <string name="evasion_penalty_title">Pop-out caught</string>
+    <string name="evasion_penalty_text">Sneaking a blocked app into a pop-out added 1 hour to your vow. The lock holds until then.</string>
+
     <!-- Doomscroll warning notification (BlockerService) -->
     <string name="doomscroll_warning_channel_name">Doomscroll Warning</string>
     <string name="doomscroll_warning_channel_description">Notifies when the time limit in a target app is nearly reached</string>

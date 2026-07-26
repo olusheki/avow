@@ -32,6 +32,10 @@ class MainViewModel @JvmOverloads constructor(
 
     // Guards the one-time full reconciliation so ongoing DataStore emissions take the light path.
     private var hasLoadedOnce = false
+    // Last pop-out-penalty nonce we've folded into the live countdown. When the service extends the
+    // vow, it bumps this nonce; a change means we must re-read the (now longer) REMAINING so the
+    // ticker doesn't keep expiring at the old time.
+    private var lastPenaltyNonce = 0L
 
     init {
         loadInstalledApps()
@@ -109,6 +113,16 @@ class MainViewModel @JvmOverloads constructor(
             applyInitialLoad(prefs)
             return
         }
+        // Pop-out penalty: the service extended the vow underneath us. Re-read the longer REMAINING
+        // into the live countdown (the ticker owns the digits, so a plain copy wouldn't move them),
+        // and tell the user why their time went up.
+        val penaltyNonce = prefs[VowDataStore.EVASION_PENALTY_NONCE] ?: 0L
+        if (penaltyNonce != lastPenaltyNonce) {
+            lastPenaltyNonce = penaltyNonce
+            showToast("Pop-out caught — 1 hour added to your vow.")
+            applyInitialLoad(prefs)
+            return
+        }
         val lockoutEnd = VowValidator.sanitizeLockoutEnd(
             prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
         )
@@ -125,6 +139,9 @@ class MainViewModel @JvmOverloads constructor(
      */
     private fun applyInitialLoad(prefs: Preferences) {
         hasLoadedOnce = true
+        // Seed the penalty nonce synchronously so a penalty applied before this load isn't re-toasted
+        // (the extended REMAINING is already read below).
+        lastPenaltyNonce = prefs[VowDataStore.EVASION_PENALTY_NONCE] ?: 0L
         viewModelScope.launch {
             try {
                 val isVowActive = prefs[VowDataStore.IS_VOW_ACTIVE] ?: false

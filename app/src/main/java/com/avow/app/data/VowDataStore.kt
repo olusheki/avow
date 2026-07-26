@@ -100,6 +100,11 @@ class VowDataStore(private val context: Context) {
         // Packages the full flavor suspended for pop-out/split evasion (not security-signed). Persisted
         // so the service can un-suspend them after a process death even if the target set later changes.
         val EVASION_SUSPENDED_PACKAGES = stringSetPreferencesKey("evasion_suspended_packages")
+        // Lite pop-out penalty bookkeeping. VOW_START_TIME of the vow already penalized (once per vow),
+        // and a nonce the ViewModel watches to re-sync its live countdown after the service extends the
+        // persisted vow. Not security-signed (the extended REMAINING/anchor they piggyback on IS signed).
+        val EVASION_PENALIZED_VOW_START = longPreferencesKey("evasion_penalized_vow_start")
+        val EVASION_PENALTY_NONCE = longPreferencesKey("evasion_penalty_nonce")
     }
  
     /**
@@ -490,6 +495,34 @@ class VowDataStore(private val context: Context) {
             
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
+    }
+
+    /**
+     * Lite pop-out/split penalty: adds [penaltySeconds] to the *current* vow (re-anchoring the
+     * countdown to now) and bumps [EVASION_PENALTY_NONCE] so a running ViewModel re-syncs its live
+     * countdown — otherwise the ViewModel's ticker would expire the vow at the original time and the
+     * penalty would be silently defeated. Applied at most once per vow (keyed on VOW_START_TIME), and
+     * only while a real, running vow exists. Returns true iff a penalty was actually applied.
+     */
+    suspend fun applyEvasionVowPenalty(penaltySeconds: Long): Boolean {
+        var applied = false
+        context.dataStore.edit { prefs ->
+            if (prefs[IS_VOW_ACTIVE] != true) return@edit
+            val vowStart = prefs[VOW_START_TIME_MS] ?: 0L
+            if (vowStart == 0L) return@edit                       // no vow identity to guard once-per-vow
+            if (prefs[EVASION_PENALIZED_VOW_START] == vowStart) return@edit  // already penalized this vow
+            val now = android.os.SystemClock.elapsedRealtime()
+            val live = VowValidator.calculateRemainingSeconds(now, prefs[LAST_SYSTEM_UPTIME_MILLIS] ?: 0L, prefs[REMAINING_VOW_SECONDS] ?: 0L)
+            if (live <= 0L) return@edit                           // vow effectively over; nothing to extend
+            prefs[REMAINING_VOW_SECONDS] = VowValidator.clampRemainingSeconds(live + penaltySeconds)
+            prefs[LAST_SYSTEM_UPTIME_MILLIS] = now
+            prefs[VOW_INITIAL_DURATION_SECONDS] = (prefs[VOW_INITIAL_DURATION_SECONDS] ?: 0L) + penaltySeconds
+            prefs[EVASION_PENALIZED_VOW_START] = vowStart
+            prefs[EVASION_PENALTY_NONCE] = System.currentTimeMillis()
+            prefs[STATE_SIGNATURE] = computeSignatureFromPrefs(prefs)
+            applied = true
+        }
+        return applied
     }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {

@@ -518,6 +518,7 @@ class BlockerServiceSettingsInterceptTest {
         setField("doomscrollTargetApps", setOf("com.instagram.android"))
 
         val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.supportsDeviceOwnerFeatures } returns true
         every { caps.isDeviceOwnerActive } returns true
         setField("capabilities", caps)
 
@@ -541,6 +542,39 @@ class BlockerServiceSettingsInterceptTest {
 
         // THEN: the evading app is actually suspended (the full-flavor "prevent" path).
         verify { caps.setAppsSuspended(setOf("com.instagram.android"), true) }
+    }
+
+    @Test
+    fun testEvasionOnLiteWithVowAddsPenaltyNotCooldown() {
+        // GIVEN: lite flavor (no device-owner powers), a running vow, and a doomscroll target in PiP.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+        setField("isVowActive", true)
+        setField("vowStartTimeMs", 1000L)
+
+        val caps = mockk<com.avow.app.enforcement.EnforcementCapabilities>(relaxed = true)
+        every { caps.supportsDeviceOwnerFeatures } returns false
+        setField("capabilities", caps)
+
+        val pipRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { pipRoot.packageName } returns "com.instagram.android"
+        val pipWindow = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { pipWindow.isInPictureInPictureMode } returns true
+        every { pipWindow.root } returns pipRoot
+        every { service.windows } returns listOf(pipWindow)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.android.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the vow is penalized (async), and NO cooldown-lockout overlay is launched.
+        coVerify(timeout = 2000) { mockDataStore.applyEvasionVowPenalty(3600L) }
+        verify(exactly = 0) { service.startActivity(any()) }
     }
 
     @Test
