@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.avow.app.MainActivity
 import com.avow.app.data.VowDataStore
 import com.avow.app.model.VowBlock
@@ -432,14 +433,16 @@ class BlockerService : AccessibilityService() {
                 manageTrackingJob()
             }
 
-            // Picture-in-Picture evasion: dragging a target into a PiP window keeps it playing while
-            // a different app becomes "foreground", dodging every currentForegroundPackage check
-            // below. Scan the on-screen windows for a restricted target in PiP and block it. Runs
-            // before the enforcement-active return so a doomscroll-only shield (no vow) still catches
-            // it. Gated to window-state changes to bound the (cheap) windows scan.
+            // Pop-out / side-by-side evasion: dragging a blocked app into a Picture-in-Picture window
+            // or a split-screen pane keeps it running while a *different* app is "foreground", dodging
+            // every currentForegroundPackage check below. Scan the on-screen windows for a restricted
+            // target hiding in one of those, and answer with the temporary cooldown lockout — a
+            // bounded, self-lifting consequence that applies to every block type (quiet hours, usage,
+            // doomscroll), not just doomscroll. Runs before the enforcement-active return so a
+            // doomscroll-only shield (no vow) still catches it; gated to window-state changes.
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                if (restrictedPackageInPip() != null) {
-                    triggerBlackoutOverlay("PICTURE-IN-PICTURE")
+                if (restrictedPackageInAuxWindow() != null) {
+                    triggerEvasionLockout()
                     return
                 }
             }
@@ -660,25 +663,59 @@ class BlockerService : AccessibilityService() {
     }
 
     /**
-     * Returns a restricted target found in a Picture-in-Picture window whose restriction is currently
-     * in force, or null. This closes the drag-to-PiP bypass: a target in PiP keeps playing while a
-     * different app is foreground, so the foreground-based checks never see it.
-     *
-     * Only the binary window-based restrictions are covered here — an enabled scheduled block inside
-     * its window, and the doomscroll shield inside its window — because those don't need per-second
-     * usage metering (which PiP can't provide). We can detect and interrupt, but note there is no
-     * public API to force another app out of PiP, so this re-asserts the block rather than dismissing
-     * the pop-out. Requires flagRetrieveInteractiveWindows (accessibility_service_config.xml).
-     *
-     * NOTE: not fully device-verified — getWindows()/PiP reporting varies by OEM. Fail-soft (any
-     * error yields null, i.e. no false block).
+     * True if [pkg] is under an active *binary* (window-based) restriction right now — an enabled
+     * scheduled block inside its window, or the doomscroll shield inside its window. These are the
+     * blocks that are simply on/off by time, so a target caught evading them via a pop-out/split
+     * window is unambiguously cheating. Usage limits are deliberately excluded: they're metered, and
+     * an aux window we can't meter shouldn't hard-lock a user who may still be under their budget.
      */
-    private fun restrictedPackageInPip(): String? {
+    private fun isBinaryRestrictedNow(pkg: String): Boolean {
+        if (isEnforcementActive) {
+            for (block in vowBlocks) {
+                if (block.isEnabled &&
+                    isBlockRestrictedAppPackage(block, pkg) &&
+                    isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin)) {
+                    return true
+                }
+            }
+        }
+        if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkg)) {
+            val windowActive = doomscrollAllTime || isCurrentTimeInQuietHours(
+                doomscrollStartHour, doomscrollStartMin, doomscrollEndHour, doomscrollEndMin
+            )
+            if (windowActive) return true
+        }
+        return false
+    }
+
+    /**
+     * Returns a restricted target hiding in a Picture-in-Picture window or a split-screen pane whose
+     * restriction is currently in force, or null. This closes the pop-out/side-by-side bypass: such a
+     * target keeps running while a *different* app is foreground, so the foreground-based checks never
+     * see it. The caller answers with the temporary cooldown lockout.
+     *
+     * We can only detect and impose a consequence — there is no public API to force another app out
+     * of PiP — so evasion becomes a bounded lockout rather than a dismissed window. Requires
+     * flagRetrieveInteractiveWindows (accessibility_service_config.xml).
+     *
+     * NOTE: not fully device-verified — getWindows()/PiP/split reporting varies by OEM. Fail-soft
+     * (any error yields null, i.e. no false lockout).
+     */
+    private fun restrictedPackageInAuxWindow(): String? {
         if (!isEnforcementActive && !doomscrollShieldEnabled) return null
         val wins = try { windows } catch (e: Throwable) { return null } ?: return null
+        // Two or more application windows on screen ≈ split-screen (or freeform); one is just normal
+        // fullscreen and handled by the foreground path.
+        val appWindowCount = wins.count {
+            try { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } catch (e: Throwable) { false }
+        }
+        val splitScreen = appWindowCount >= 2
         for (w in wins) {
             val inPip = try { w.isInPictureInPictureMode } catch (e: Throwable) { false }
-            if (!inPip) continue
+            val isApp = try { w.type == AccessibilityWindowInfo.TYPE_APPLICATION } catch (e: Throwable) { false }
+            // Only the evading windows: a PiP pop-out, or a split-screen pane. Plain fullscreen apps
+            // are already covered by the normal foreground checks.
+            if (!inPip && !(splitScreen && isApp)) continue
             val root = try { w.root } catch (e: Throwable) { null } ?: continue
             val pkg = try {
                 root.packageName?.toString()
@@ -686,26 +723,28 @@ class BlockerService : AccessibilityService() {
                 try { root.recycle() } catch (_: Throwable) {}
             }
             if (pkg.isNullOrEmpty()) continue
-
-            // Scheduled block covering this app right now (needs a running vow / Active mode).
-            if (isEnforcementActive) {
-                for (block in vowBlocks) {
-                    if (block.isEnabled &&
-                        isBlockRestrictedAppPackage(block, pkg) &&
-                        isCurrentTimeInQuietHours(block.startHour, block.startMin, block.endHour, block.endMin)) {
-                        return pkg
-                    }
-                }
-            }
-            // Doomscroll shield inside its active window (independent of any vow).
-            if (doomscrollShieldEnabled && isDoomscrollTargetApp(pkg)) {
-                val windowActive = doomscrollAllTime || isCurrentTimeInQuietHours(
-                    doomscrollStartHour, doomscrollStartMin, doomscrollEndHour, doomscrollEndMin
-                )
-                if (windowActive) return pkg
-            }
+            // The tracked foreground app is handled by the normal path; only flag it here when it's
+            // truly evading — a PiP window (never the foreground) or a *second* split-screen pane.
+            if (!inPip && pkg == currentForegroundPackage) continue
+            if (isBinaryRestrictedNow(pkg)) return pkg
         }
         return null
+    }
+
+    /**
+     * Imposes the temporary cooldown lockout when pop-out/split-screen evasion is detected. Reuses
+     * the doomscroll cooldown duration and the same bounded, self-lifting lockout screen, but tags it
+     * with the EVASION reason so the overlay explains that the block still holds. In-memory first so
+     * the app-launch intercept reads it immediately; never shrinks a lockout already running.
+     */
+    private fun triggerEvasionLockout() {
+        val cooldownMs = doomscrollCooldownMinutes * 60L * 1000L
+        val endTime = maxOf(temporaryLockoutEndTime, SystemClock.elapsedRealtime() + cooldownMs)
+        temporaryLockoutEndTime = endTime
+        serviceScope.launch {
+            vowDataStore.saveTemporaryLockoutEndTime(endTime, VowDataStore.LOCKOUT_REASON_EVASION)
+        }
+        triggerLockoutOverlay()
     }
 
     private fun isTargetBrowserWithSpecificDomain(pkgName: String): Boolean {

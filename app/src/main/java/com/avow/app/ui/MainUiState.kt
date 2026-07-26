@@ -22,7 +22,10 @@ data class MainUiState(
     val isActiveVowMode: Boolean = false,
     val deactivationRequestTime: Long = 0L,
     val temporaryLockoutEndTime: Long = 0L,
-    
+    // Why the temporary lockout is showing (VowDataStore.LOCKOUT_REASON_*), so the overlay can word
+    // itself: doomscroll cooldown vs. a pop-out/split-screen evasion block.
+    val lockoutReason: String = "",
+
     val inAppToastMessage: String? = null,
     val installedApps: List<Pair<String, String>> = emptyList(),
     

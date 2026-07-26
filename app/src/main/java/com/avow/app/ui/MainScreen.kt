@@ -394,6 +394,7 @@ fun MainScreen(
             ScreenState.TEMPORARY_LOCKOUT -> {
                 TemporaryLockoutOverlay(
                     endTimeElapsedRealtime = uiState.temporaryLockoutEndTime,
+                    reason = uiState.lockoutReason,
                     onExit = {
                         viewModel.setScreenState(
                             if (uiState.isVowActive) ScreenState.LOCKED_VAULT else ScreenState.UNLOCKED_VAULT
@@ -620,9 +621,18 @@ fun StraightFaceOutline(
 @Composable
 fun TemporaryLockoutOverlay(
     endTimeElapsedRealtime: Long = 0L,
+    reason: String = "",
     onExit: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Word the screen for why it fired: an evasion block (a blocked app caught running in a pop-out
+    // or side-by-side window) reads differently from a plain doomscroll cooldown.
+    val isEvasion = reason == VowDataStore.LOCKOUT_REASON_EVASION
+    val titleText = if (isEvasion) "[ NO SIDE DOORS ]" else "[ DOOMSCROLL COOLDOWN ]"
+    val bodyText = if (isEvasion)
+        "Popping the app out to keep it running won't slip past the block. Hold tight — the lock lifts itself."
+    else
+        "The scroll ran long. Take a breath — the lock lifts itself."
     var remainingSec by remember(endTimeElapsedRealtime) {
         mutableStateOf(((endTimeElapsedRealtime - SystemClock.elapsedRealtime()) / 1000L).coerceAtLeast(0L))
     }
@@ -654,7 +664,7 @@ fun TemporaryLockoutOverlay(
             )
             Spacer(modifier = Modifier.height(28.dp))
             Text(
-                text = "[ DOOMSCROLL COOLDOWN ]",
+                text = titleText,
                 color = LockedRed,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
@@ -672,7 +682,7 @@ fun TemporaryLockoutOverlay(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "The scroll ran long. Take a breath — the lock lifts itself.",
+                text = bodyText,
                 color = SubtextGrey,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,

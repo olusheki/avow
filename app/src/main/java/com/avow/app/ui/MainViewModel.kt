@@ -109,9 +109,14 @@ class MainViewModel @JvmOverloads constructor(
             applyInitialLoad(prefs)
             return
         }
-        val lockoutEnd = prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L
+        val lockoutEnd = VowValidator.sanitizeLockoutEnd(
+            prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
+        )
         val doomAcc = prefs[VowDataStore.DOOMSCROLL_ACCUMULATED_MS] ?: 0L
-        _uiState.update { it.copy(temporaryLockoutEndTime = lockoutEnd, doomscrollAccumulatedMs = doomAcc) }
+        val reason = prefs[VowDataStore.TEMPORARY_LOCKOUT_REASON] ?: ""
+        _uiState.update {
+            it.copy(temporaryLockoutEndTime = lockoutEnd, doomscrollAccumulatedMs = doomAcc, lockoutReason = reason)
+        }
     }
 
     /**
@@ -149,6 +154,7 @@ class MainViewModel @JvmOverloads constructor(
                 val temporaryLockoutEndTime = VowValidator.sanitizeLockoutEnd(
                     prefs[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L, SystemClock.elapsedRealtime()
                 )
+                val lockoutReason = prefs[VowDataStore.TEMPORARY_LOCKOUT_REASON] ?: ""
                 val doomscrollShieldEnabled = prefs[VowDataStore.DOOMSCROLL_SHIELD_ENABLED] ?: false
                 val doomscrollAllTime = prefs[VowDataStore.DOOMSCROLL_ALL_TIME] ?: false
                 val doomscrollStartHour = prefs[VowDataStore.DOOMSCROLL_START_HOUR] ?: 23
@@ -303,6 +309,7 @@ class MainViewModel @JvmOverloads constructor(
                         vowStartTimeMs = vowStartTimeMs,
                         vowInitialDurationSeconds = vowInitialDurationSeconds,
                         temporaryLockoutEndTime = temporaryLockoutEndTime,
+                        lockoutReason = lockoutReason,
                         currentState = if (state.currentState == ScreenState.INTRUSION_INTERCEPT || state.currentState == ScreenState.TEMPORARY_LOCKOUT) {
                             if (currentState == ScreenState.TEMPORARY_LOCKOUT) {
                                 currentState
@@ -515,21 +522,23 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun enterTemporaryLockout() {
         viewModelScope.launch {
-            val end = try {
-                VowValidator.sanitizeLockoutEnd(
-                    vowDataStore.preferencesFlow.first()[VowDataStore.TEMPORARY_LOCKOUT_END_TIME] ?: 0L,
-                    SystemClock.elapsedRealtime()
-                )
+            val prefs = try {
+                vowDataStore.preferencesFlow.first()
             } catch (e: Exception) {
-                Log.e("MainViewModel", "Failed to read lockout end time", e)
-                0L
+                Log.e("MainViewModel", "Failed to read lockout state", e)
+                null
             }
-            // Set end time and screen state together so the ticker's exit check never sees the
-            // lockout screen with a still-unloaded (zero) end time.
+            val end = VowValidator.sanitizeLockoutEnd(
+                prefs?.get(VowDataStore.TEMPORARY_LOCKOUT_END_TIME) ?: 0L, SystemClock.elapsedRealtime()
+            )
+            val reason = prefs?.get(VowDataStore.TEMPORARY_LOCKOUT_REASON) ?: ""
+            // Set end time, reason, and screen state together so the ticker's exit check never sees
+            // the lockout screen with a still-unloaded (zero) end time.
             updateState {
                 copy(
                     previousState = if (currentState == ScreenState.TEMPORARY_LOCKOUT) previousState else currentState,
                     temporaryLockoutEndTime = maxOf(temporaryLockoutEndTime, end),
+                    lockoutReason = reason,
                     currentState = ScreenState.TEMPORARY_LOCKOUT
                 )
             }

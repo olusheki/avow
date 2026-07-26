@@ -31,6 +31,12 @@ class VowDataStore(private val context: Context) {
         // applies a *softened* 24h lockout instead of the former 7-day one, plus a clear notification.
         const val TAMPER_LOCKOUT_SECONDS = 24L * 3600L
 
+        // Why a temporary lockout is showing, so the overlay can word itself correctly. Cosmetic /
+        // not security-signed. DOOMSCROLL = the scroll allowance ran out; EVASION = a blocked app was
+        // caught running in a pop-out / side-by-side window to dodge enforcement.
+        const val LOCKOUT_REASON_DOOMSCROLL = "DOOMSCROLL"
+        const val LOCKOUT_REASON_EVASION = "EVASION"
+
         val IS_VOW_ACTIVE = booleanPreferencesKey("is_vow_active")
         val IS_ACTIVE_VOW_MODE = booleanPreferencesKey("is_active_vow_mode")
         val DEACTIVATION_REQUEST_TIME = longPreferencesKey("deactivation_request_time")
@@ -70,6 +76,8 @@ class VowDataStore(private val context: Context) {
         // reboot (uptime restarts near zero) and BootReceiver clears it. Read/enforced across
         // BlockerService, MainViewModel, and BootReceiver; keep all comparisons on elapsedRealtime.
         val TEMPORARY_LOCKOUT_END_TIME = longPreferencesKey("temporary_lockout_end_time")
+        // Cosmetic reason string for the active temporary lockout (not part of the tamper signature).
+        val TEMPORARY_LOCKOUT_REASON = stringPreferencesKey("temporary_lockout_reason")
         val VOW_START_TIME_MS = longPreferencesKey("vow_start_time_ms")
         val VOW_INITIAL_DURATION_SECONDS = longPreferencesKey("vow_initial_duration_seconds")
         val VOW_PICKUPS_COUNT = intPreferencesKey("vow_pickups_count")
@@ -496,9 +504,12 @@ class VowDataStore(private val context: Context) {
         }
     }
 
-    suspend fun saveTemporaryLockoutEndTime(endTime: Long) {
+    suspend fun saveTemporaryLockoutEndTime(endTime: Long, reason: String = LOCKOUT_REASON_DOOMSCROLL) {
         context.dataStore.edit { preferences ->
             preferences[TEMPORARY_LOCKOUT_END_TIME] = endTime
+            // Clearing the lockout (endTime <= 0) drops the reason; otherwise record why it fired.
+            if (endTime <= 0L) preferences.remove(TEMPORARY_LOCKOUT_REASON)
+            else preferences[TEMPORARY_LOCKOUT_REASON] = reason
             preferences[STATE_SIGNATURE] = computeSignatureFromPrefs(preferences)
         }
     }

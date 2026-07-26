@@ -438,8 +438,76 @@ class BlockerServiceSettingsInterceptTest {
         // WHEN: the foreground switches to the launcher but Instagram keeps playing in PiP
         service.onAccessibilityEvent(event)
 
-        // THEN: the block overlay still fires against the PiP target
+        // THEN: the evasion cooldown lockout fires against the PiP target
         verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testDoomscrollTargetInSplitScreenIsBlocked() {
+        // GIVEN: the shield is on (all-day) for Instagram, and the screen is split between another
+        // app (focused) and Instagram — using it side-by-side to dodge the foreground check.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+        setField("currentForegroundPackage", "com.some.otherapp")
+
+        val igRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { igRoot.packageName } returns "com.instagram.android"
+        val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { igWin.isInPictureInPictureMode } returns false
+        every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.root } returns igRoot
+
+        val otherRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { otherRoot.packageName } returns "com.some.otherapp"
+        val otherWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { otherWin.isInPictureInPictureMode } returns false
+        every { otherWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { otherWin.root } returns otherRoot
+
+        every { service.windows } returns listOf(igWin, otherWin)
+
+        mockkConstructor(android.content.Intent::class)
+        every { anyConstructed<android.content.Intent>().setFlags(any()) } returns mockk(relaxed = true)
+        every { anyConstructed<android.content.Intent>().putExtra(any<String>(), any<Boolean>()) } returns mockk(relaxed = true)
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.some.otherapp"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: the evasion cooldown lockout fires against the non-focused split-screen target
+        verify(exactly = 1) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testSingleForegroundDoomscrollTargetDoesNotTriggerEvasionLockout() {
+        // GIVEN: a doomscroll target used normally (single fullscreen app, no PiP, no split) — the
+        // evasion path must NOT fire; normal foreground use is metered, not immediately locked.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+
+        val igRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { igRoot.packageName } returns "com.instagram.android"
+        val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { igWin.isInPictureInPictureMode } returns false
+        every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.root } returns igRoot
+        every { service.windows } returns listOf(igWin)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.instagram.android"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: no evasion lockout — a single fullscreen target isn't evading anything
+        verify(exactly = 0) { service.startActivity(any()) }
     }
 
     @Test
