@@ -12,8 +12,8 @@ class SocialUsageStatsTest {
 
     private val FG = UsageEvents.Event.MOVE_TO_FOREGROUND
     private val BG = UsageEvents.Event.MOVE_TO_BACKGROUND
-    private val IG = "com.instagram.android"   // social (keyword "instagram")
-    private val TT = "com.tiktok.android"      // social (keyword "tiktok")
+    private val IG = "com.instagram.android"     // social
+    private val TT = "com.zhiliaoapp.musically"  // social (TikTok's real package)
     private val SETTINGS = "com.android.settings" // not social
 
     @Test

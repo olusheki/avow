@@ -17,19 +17,28 @@ object SocialUsageStats {
     private const val MS_PER_HOUR = 1000f * 60f * 60f
     private const val DAY_MS = 24L * 60L * 60L * 1000L
 
-    /** Package-name fragments that identify common social media apps. */
-    val SOCIAL_MEDIA_KEYWORDS = listOf(
-        "instagram", "tiktok", "musically", "trill",       // Instagram, TikTok (both variants)
-        "facebook", "katana",                               // Facebook
-        "twitter",                                          // X / Twitter
-        "snapchat", "reddit", "pinterest", "tumblr",
-        "youtube", "linkedin", "threads", "barcelona"       // Threads pkg = com.instagram.barcelona
+    /**
+     * Exact package names counted as "social media". Exact match (not substring) so a stray
+     * fragment can't sweep in unrelated apps and inflate the total. Verified against Google Play /
+     * TikTok SDK docs. Add entries here to widen the definition.
+     */
+    val SOCIAL_MEDIA_PACKAGES = setOf(
+        "com.instagram.android",      // Instagram
+        "com.instagram.barcelona",    // Threads
+        "com.zhiliaoapp.musically",   // TikTok (global)
+        "com.ss.android.ugc.trill",   // TikTok (East/SE Asia build)
+        "com.facebook.katana",        // Facebook
+        "com.twitter.android",        // X / Twitter
+        "com.snapchat.android",       // Snapchat
+        "com.reddit.frontpage",       // Reddit
+        "com.pinterest",              // Pinterest
+        "com.tumblr",                 // Tumblr
+        "com.google.android.youtube", // YouTube
+        "com.linkedin.android",       // LinkedIn
+        "com.bereal.ft"               // BeReal
     )
 
-    fun isSocialMediaPackage(pkg: String): Boolean {
-        val p = pkg.lowercase()
-        return SOCIAL_MEDIA_KEYWORDS.any { p.contains(it) }
-    }
+    fun isSocialMediaPackage(pkg: String): Boolean = pkg.lowercase() in SOCIAL_MEDIA_PACKAGES
 
     /** A foreground/background transition, extracted so the aggregation is unit-testable. */
     internal data class FgEvent(val type: Int, val pkg: String, val timestamp: Long)
