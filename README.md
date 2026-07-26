@@ -108,13 +108,20 @@ The suite focuses on the risky paths — lock/unlock, tamper detection, reboot r
 
 aVow has no servers, accounts, or analytics, and nothing you do leaves your device. See [PRIVACY_POLICY.md](PRIVACY_POLICY.md) for exactly what it accesses and why.
 
+## Docs
+
+- **[FAQ](FAQ.md)** — how vows work, unblocking, removing Device Owner, and troubleshooting.
+- **[Terms of Use](TERMS.md)** — the "use at your own risk" disclaimer (worth reading before a long vow).
+- **[Privacy Policy](PRIVACY_POLICY.md)** · **[Security Policy](SECURITY.md)** · **[Contributing](CONTRIBUTING.md)**
+
 ## Contributing
 
 Issues, ideas, and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? Please report it privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
-aVow is released under the [GNU General Public License v3.0](LICENSE).
+aVow's source is released under the [GNU General Public License v3.0](LICENSE). Use of the app itself
+is covered by the [Terms of Use](TERMS.md).
 
 ## Author
 
