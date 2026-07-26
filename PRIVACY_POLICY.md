@@ -1,12 +1,15 @@
 # aVow — Privacy Policy
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-26_
 
 aVow is a digital-wellbeing app that helps you block distracting apps and websites that **you**
 choose. This policy explains what the app accesses, why, and what happens to it.
 
-**The short version: aVow does not collect, transmit, or share any personal data. Everything it needs
-stays on your device.** aVow has no servers, no accounts, no analytics, and no advertising.
+**The short version: aVow has no servers, no accounts, no analytics, and no advertising, and it
+collects nothing about you.** Everything it needs stays on your device — with one exception: if you
+turn on the optional "block in all browsers" filter, your device's ordinary DNS lookups are sent to a
+public resolver (Cloudflare's `1.1.1.1`) so they can be resolved, exactly as they would be by any DNS
+server. aVow itself still receives and stores nothing.
 
 ## What the app accesses, and why
 
@@ -41,8 +44,9 @@ None of this leaves your device. Uninstalling aVow deletes all of it.
 - It does **not** use the Accessibility Service to read screen content beyond the foreground app
   package name and the browser address bar needed to block sites.
 - It uses the internet permission **only** so the optional "block in all browsers" domain filter can
-  forward your device's ordinary DNS lookups to a public resolver; aVow has no server and uploads
-  **none** of your data anywhere.
+  forward your device's ordinary DNS lookups to a public resolver (Cloudflare's `1.1.1.1`). Blocked
+  domains are dropped on your device and never sent anywhere; aVow has no server of its own and
+  uploads **none** of your data.
 - It does **not** share data with any third party, because it has no data to share.
 - It is **not** an accessibility tool and does not represent itself as one.
 
