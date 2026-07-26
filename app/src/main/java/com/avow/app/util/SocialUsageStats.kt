@@ -64,39 +64,37 @@ object SocialUsageStats {
                     events.add(FgEvent(e.eventType, e.packageName, e.timeStamp))
                 }
             }
-            (socialForegroundMs(events, start, end) / MS_PER_HOUR).coerceAtLeast(0f)
+            (socialForegroundMs(events, end) / MS_PER_HOUR).coerceAtLeast(0f)
         } catch (e: Exception) {
             0f
         }
     }
 
     /**
-     * Sums the time social-media apps spent in the foreground across [events] (assumed ordered),
-     * clipped to [windowStart, windowEnd]. Single-foreground model: a new foreground closes the
-     * previous app's session; an app still foreground at the window end counts until [windowEnd]; a
-     * background with no seen foreground (session began before the window) counts from [windowStart].
+     * Sums the time social-media apps spent in the foreground across [events] (assumed time-ordered),
+     * up to [windowEnd]. Single-foreground model: it tracks the one app currently in the foreground
+     * and, on any transition, credits only *that* app's elapsed time before moving on.
+     *
+     * Crucially it does NOT try to credit a package named by a background event that isn't the tracked
+     * foreground app: real devices emit lagging/duplicate PAUSED events (heavy apps like TikTok do so
+     * constantly), and an earlier version credited those from the window start — dozens a day summed
+     * past 24h and pinned the result at the daily cap. A session already open at the window start is
+     * simply not counted (at most one partial session, negligible over a 24h/7d window).
      */
-    internal fun socialForegroundMs(events: List<FgEvent>, windowStart: Long, windowEnd: Long): Long {
+    internal fun socialForegroundMs(events: List<FgEvent>, windowEnd: Long): Long {
         var total = 0L
-        var fgPkg: String? = null
+        var fgPkg: String? = null   // the one app currently foreground, or null between sessions
         var since = 0L
         for (ev in events) {
-            when (ev.type) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += ev.timestamp - since
-                    fgPkg = ev.pkg
-                    since = ev.timestamp
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    if (isSocialMediaPackage(ev.pkg)) {
-                        val from = if (fgPkg == ev.pkg) since else windowStart
-                        total += ev.timestamp - from
-                    }
-                    fgPkg = null
-                }
+            if (fgPkg != null && isSocialMediaPackage(fgPkg!!) && ev.timestamp > since) {
+                total += ev.timestamp - since
             }
+            fgPkg = if (ev.type == UsageEvents.Event.MOVE_TO_FOREGROUND) ev.pkg else null
+            since = ev.timestamp
         }
-        if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += windowEnd - since
+        if (fgPkg != null && isSocialMediaPackage(fgPkg!!) && windowEnd > since) {
+            total += windowEnd - since
+        }
         return total.coerceAtLeast(0L)
     }
 
