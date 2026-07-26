@@ -17,19 +17,28 @@ object SocialUsageStats {
     private const val MS_PER_HOUR = 1000f * 60f * 60f
     private const val DAY_MS = 24L * 60L * 60L * 1000L
 
-    /** Package-name fragments that identify common social media apps. */
-    val SOCIAL_MEDIA_KEYWORDS = listOf(
-        "instagram", "tiktok", "musically", "trill",       // Instagram, TikTok (both variants)
-        "facebook", "katana",                               // Facebook
-        "twitter",                                          // X / Twitter
-        "snapchat", "reddit", "pinterest", "tumblr",
-        "youtube", "linkedin", "threads", "barcelona"       // Threads pkg = com.instagram.barcelona
+    /**
+     * Exact package names counted as "social media". Exact match (not substring) so a stray
+     * fragment can't sweep in unrelated apps and inflate the total. Verified against Google Play /
+     * TikTok SDK docs. Add entries here to widen the definition.
+     */
+    val SOCIAL_MEDIA_PACKAGES = setOf(
+        "com.instagram.android",      // Instagram
+        "com.instagram.barcelona",    // Threads
+        "com.zhiliaoapp.musically",   // TikTok (global)
+        "com.ss.android.ugc.trill",   // TikTok (East/SE Asia build)
+        "com.facebook.katana",        // Facebook
+        "com.twitter.android",        // X / Twitter
+        "com.snapchat.android",       // Snapchat
+        "com.reddit.frontpage",       // Reddit
+        "com.pinterest",              // Pinterest
+        "com.tumblr",                 // Tumblr
+        "com.google.android.youtube", // YouTube
+        "com.linkedin.android",       // LinkedIn
+        "com.bereal.ft"               // BeReal
     )
 
-    fun isSocialMediaPackage(pkg: String): Boolean {
-        val p = pkg.lowercase()
-        return SOCIAL_MEDIA_KEYWORDS.any { p.contains(it) }
-    }
+    fun isSocialMediaPackage(pkg: String): Boolean = pkg.lowercase() in SOCIAL_MEDIA_PACKAGES
 
     /** A foreground/background transition, extracted so the aggregation is unit-testable. */
     internal data class FgEvent(val type: Int, val pkg: String, val timestamp: Long)
@@ -55,39 +64,37 @@ object SocialUsageStats {
                     events.add(FgEvent(e.eventType, e.packageName, e.timeStamp))
                 }
             }
-            (socialForegroundMs(events, start, end) / MS_PER_HOUR).coerceAtLeast(0f)
+            (socialForegroundMs(events, end) / MS_PER_HOUR).coerceAtLeast(0f)
         } catch (e: Exception) {
             0f
         }
     }
 
     /**
-     * Sums the time social-media apps spent in the foreground across [events] (assumed ordered),
-     * clipped to [windowStart, windowEnd]. Single-foreground model: a new foreground closes the
-     * previous app's session; an app still foreground at the window end counts until [windowEnd]; a
-     * background with no seen foreground (session began before the window) counts from [windowStart].
+     * Sums the time social-media apps spent in the foreground across [events] (assumed time-ordered),
+     * up to [windowEnd]. Single-foreground model: it tracks the one app currently in the foreground
+     * and, on any transition, credits only *that* app's elapsed time before moving on.
+     *
+     * Crucially it does NOT try to credit a package named by a background event that isn't the tracked
+     * foreground app: real devices emit lagging/duplicate PAUSED events (heavy apps like TikTok do so
+     * constantly), and an earlier version credited those from the window start — dozens a day summed
+     * past 24h and pinned the result at the daily cap. A session already open at the window start is
+     * simply not counted (at most one partial session, negligible over a 24h/7d window).
      */
-    internal fun socialForegroundMs(events: List<FgEvent>, windowStart: Long, windowEnd: Long): Long {
+    internal fun socialForegroundMs(events: List<FgEvent>, windowEnd: Long): Long {
         var total = 0L
-        var fgPkg: String? = null
+        var fgPkg: String? = null   // the one app currently foreground, or null between sessions
         var since = 0L
         for (ev in events) {
-            when (ev.type) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += ev.timestamp - since
-                    fgPkg = ev.pkg
-                    since = ev.timestamp
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    if (isSocialMediaPackage(ev.pkg)) {
-                        val from = if (fgPkg == ev.pkg) since else windowStart
-                        total += ev.timestamp - from
-                    }
-                    fgPkg = null
-                }
+            if (fgPkg != null && isSocialMediaPackage(fgPkg!!) && ev.timestamp > since) {
+                total += ev.timestamp - since
             }
+            fgPkg = if (ev.type == UsageEvents.Event.MOVE_TO_FOREGROUND) ev.pkg else null
+            since = ev.timestamp
         }
-        if (fgPkg != null && isSocialMediaPackage(fgPkg!!)) total += windowEnd - since
+        if (fgPkg != null && isSocialMediaPackage(fgPkg!!) && windowEnd > since) {
+            total += windowEnd - since
+        }
         return total.coerceAtLeast(0L)
     }
 
