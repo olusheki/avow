@@ -1,144 +1,128 @@
-# aVow // UNYIELDING DIGITAL BINDING VOW FOR ABSOLUTE FOCUS
+<div align="center">
 
-aVow is an offline-first Android application designed to enforce inescapable digital distraction boundaries. It turns your device into a dedicated, single-purpose workspace by locking down accessibility controls, settings, and distracting apps.
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/avow_logo_inverted.png">
+    <img src="branding/avow_logo_gray.png" alt="aVow logo" width="96">
+  </picture>
 
-Once a binding vow's countdown is active, restrictions cannot be loosened — you can add time or tighten rules, but never shorten or disable them until the timer expires.
+  <h1>aVow</h1>
 
----
+  <p><strong>Lock yourself out of distracting apps — and actually mean it.</strong></p>
+
+  <p>
+    <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
+    <img alt="Platform" src="https://img.shields.io/badge/Platform-Android%2014%2B-3DDC84?logo=android&logoColor=white">
+    <img alt="Built with" src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white">
+    <a href="https://github.com/olusheki/avow/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/olusheki/avow/actions/workflows/ci.yml/badge.svg"></a>
+  </p>
+
+</div>
+
+aVow is an Android focus app that makes your self-control decisions stick. You set a **vow** — a timer from a few minutes to 99 days — and the apps and websites you chose to block stay blocked until it runs out. You can always make a vow *stricter* or add time, but you can't unlock early. Everything runs on your device: no account, no servers, no analytics.
+
+## Screenshots
+
+<!-- Add images to docs/screenshots/ and uncomment:
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="220" alt="Dashboard">
+  <img src="docs/screenshots/lockout.png"   width="220" alt="Lockout screen">
+  <img src="docs/screenshots/insights.png"  width="220" alt="Focus insights">
+</p>
+-->
+
+_Screenshots coming soon._
+
+## Why aVow?
+
+Most app blockers are one tap away from being switched off — right when they need to hold. aVow is built around a single idea: **once you commit, the decision is out of your hands until the timer ends.** It's for people who already know what distracts them and want a boundary that doesn't fold in a weak moment.
+
+## Features
+
+- ⏳ **Binding vows** — commit for minutes or months. Add time or tighten the rules whenever you like; never loosen or cancel until the timer runs out.
+- 📵 **Block apps & websites** — pick what to shut out. Sites are blocked in *every* browser (not just the ones aVow can read) via an on-device DNS filter that sinkholes blocked domains locally — no server of ours in the loop.
+- 🕓 **Schedules & usage limits** — "quiet hours" windows and per-app time budgets (say, 10 minutes an hour).
+- 🌀 **Doomscroll shield** — spend past your allowance in a chosen app and it locks for a cooldown, with a stricter late-night window.
+- 🙅 **No sneaking out** — attempts to disable aVow from Settings, use private/incognito browsing, or slip an app into a pop-out (picture-in-picture) or split-screen are caught too.
+- 📊 **Focus insights** — a local history of your sessions with a simple 0–100 "zen score" and trends.
+- 🔐 **Hardened enforcement** *(full edition)* — optional Device Owner locks make a vow genuinely hard to escape: block uninstalling aVow, factory reset, Safe Mode, and more.
 
 ## Two editions
 
-aVow ships as two Gradle product flavors from one codebase:
+Both build from one codebase and can be installed side by side.
 
-| Edition | App name | Application ID | Distribution | Enforcement |
-| --- | --- | --- | --- | --- |
-| **lite** | aVow | `com.avow.app` | Google Play | Accessibility service only (Play-policy compliant) |
-| **full** | aVow Plus | `com.avow.app.plus` | GitHub (sideload) | Accessibility **plus** enterprise Device Owner locks |
+| | **aVow** (lite) | **aVow Plus** (full) |
+| --- | --- | --- |
+| Distribution | Google Play | GitHub (sideload) |
+| Enforcement | Accessibility service | Accessibility **+** Device Owner locks |
+| Application ID | `com.avow.app` | `com.avow.app.plus` |
 
-Both can be installed side by side. The lite build omits the device-admin surface entirely so it satisfies Google Play's restricted-permission policies; the full build adds the hardened Device Owner enforcement below.
+The lite edition is Google Play–policy compliant. The full edition adds the hardened Device Owner enforcement for people who want a vow that's nearly impossible to bypass.
 
----
+## Build & install
 
-## Repository and Project Details
+You'll need Android Studio (or the Android SDK) and a device or emulator on **Android 14+**.
 
-* GitHub Repository: [olusheki/avow](https://github.com/olusheki/avow)
-* Author/Concept: Daniel Olusheki
-* Contact: avowtheapp@gmail.com
-* Tooling: Scaffolded and optimized using Google Antigravity 2.0 in conjunction with Android Studio.
+**Lite edition** — no special setup:
 
----
-
-## System Architecture
-
-* Minimum SDK: API 34 (Android 14)
-* Target SDK: API 36 (Android 16)
-* Compile SDK: API 36 (Android 16.1)
-* Aesthetic Theme: Minimal Monospace "Lab-Stark" (monotonal graphite-grey and white)
-* Network access: No servers, no analytics, no accounts — nothing leaves the device. Domain filtering runs entirely on-device (see below).
-
----
-
-## Core Features
-
-### 1. Inescapable Countdown Lock
-* Ticking Loop: Runs continuously in the background, measuring intervals via monotonic system uptime (`SystemClock.elapsedRealtime()`) to prevent drift or timezone manipulation.
-* Active vs. Passive Vows: Passive vows enforce only their configured apps/schedules during a timed vow; Active mode enforces the same rules continuously without requiring a running vow (rules still respect their own schedules). The mode is frozen once a vow is locked.
-* Duration Limits: Countdowns from 1 hour to 90 days. Users can append more time but cannot reduce it.
-
-### 2. Enterprise Device Administration Policies *(full edition only)*
-Leverages Device Owner privileges to enforce:
-* Block Uninstallation: Prevents uninstalling the application.
-* Block Data Wipe: Disables factory resets and application storage clears.
-* Disable Safe Boot: Blocks escaping restrictions by rebooting into Safe Mode.
-* Block Google Play Store: Prevents installing new distracting apps.
-* Knox & Private Space Suspension: Suspends Knox Secure Folders and Android 15 Private Spaces when restrictions are active.
-* Deactivate USB Debugging: Restricts ADB commands from force-stopping or disabling the app service.
-
-### 3. Accessibility Blocker Service
-* Settings Hijack & Redirect: Intercepts attempts to open system settings and accessibility controls, redirecting to the home screen.
-* URL Extraction: Scans address bars for Chrome and Samsung Internet in O(1) time to intercept banned domains.
-* Zero Lag Interception: Caches configuration in memory to run checks instantly, avoiding Application Not Responding (ANR) flags.
-* Rich Lockout Screen: Blocked launches surface a full-screen lockout naming the reason (scheduled block, usage limit, banned site, secure profile, and so on).
-
-### 4. On-Device Domain Filter (browser-agnostic)
-* Local DNS Sinkhole: An optional `VpnService` runs a fully local, no-server DNS filter that blocks banned domains across *every* app and browser — not just the ones the accessibility scanner recognizes.
-* No traffic leaves the device: it requires the `INTERNET` permission only to open a local socket; it routes nothing to any remote server and self-heals (auto-disables) on error.
-* Locked while vowed: cannot be switched off during an active vow.
-
-### 5. Mins-per-Hour Usage Limits
-* Collective vs. Independent Limits: Configure a collective limit (combined duration across all restricted apps) or independent limits (tracked separately per app).
-* Write-Behind Cache: A thread-safe `ConcurrentHashMap` updates at 1 Hz and commits to disk every 30 seconds or on app-state transitions to save database I/O.
-* Eager Reset Checks: Resolves hour-boundary transitions under a `cacheMutex` lock to reset usage timers at interval boundaries.
-
-### 6. Multiple Blocks Scheduler
-* Custom Schedules: Up to 4 parallel custom scheduled blocks, defaulting to "Quiet Hours".
-* Subset Time Containment Validation: Enforces `BlockedMinutes(Old) ⊆ BlockedMinutes(New)` during active vows, preventing users from shortening schedules.
-
-### 7. Doomscroll Shield
-* Scroll Monitoring: Detects high-frequency scroll input inside target apps. Exceeding the configured allowance (with a stricter late-night window) triggers a branded warning notification.
-* Warning Preloading: Tapping the notification preloads a 15-minute lockout vow.
-* Neutral Lockout: Ignoring the warning triggers a temporary lockout screen with zero touch targets until the cooldown elapses.
-
-### 8. Idle Vow Reminder
-* A daily WorkManager check nudges you to set a new vow if you've drifted away — onboarding complete, no active vow, and the app unopened for 3+ days — and rate-limits itself to avoid nagging.
-
-### 9. Focus History and Productivity Analytics
-* SQLite Room Facade: Logs focus sessions locally, returning `Flow` objects for UI state.
-* Zen Score Formula (0–100 per session):
-  `Zen Score = max(0, 100 - (Intrusions * 10) - ((Allowed Screen Time (min) / Focus Duration (hr)) * 5))`
-  Intrusions are intercepted app launches; Allowed Screen Time is interactive screen-on time in permitted apps.
-* UI Trend Comparison: Cumulative analytics and a Canvas line graph of Zen Score across the last seven sessions.
-
----
-
-## Technical Architecture Index
-
-1. [VowDataStore.kt](app/src/main/java/com/avow/app/data/VowDataStore.kt): Preference storage, tamper-evident state signatures, and Keystore-backed HMAC verification.
-2. [BlockerService.kt](app/src/main/java/com/avow/app/service/BlockerService.kt): AccessibilityService checking foreground packages, URL extraction, settings overrides, usage tracking, and doomscroll monitoring.
-3. [DomainVpnService.kt](app/src/main/java/com/avow/app/vpn/DomainVpnService.kt): Local, no-server DNS-filter VpnService for browser-agnostic domain blocking.
-4. [ReminderWorker.kt](app/src/main/java/com/avow/app/worker/ReminderWorker.kt): Daily WorkManager job for the idle "set a vow" nudge.
-5. [BootReceiver.kt](app/src/main/java/com/avow/app/receiver/BootReceiver.kt): Relaunches MainActivity on reboot if a vow is active.
-6. [DeviceAdmin.kt](app/src/full/java/com/avow/app/receiver/DeviceAdmin.kt): *(full edition)* DeviceAdminReceiver enforcing system-level locks via DevicePolicyManager.
-7. [MainActivity.kt](app/src/main/java/com/avow/app/MainActivity.kt): App router processing intrusion intents and launching overlays.
-8. [MainScreen.kt](app/src/main/java/com/avow/app/ui/MainScreen.kt): Stark Compose dashboard — controls, digital-clock countdown, and history workspaces.
-
----
-
-## Deployment & Setup
-
-### Clone
-```bash
-git clone https://github.com/olusheki/avow.git
-cd avow
-```
-
-### Option A — lite edition (Google Play / accessibility only)
-No ADB or Device Owner step is required.
 ```bash
 ./gradlew assembleLiteDebug
 adb install app/build/outputs/apk/lite/debug/app-lite-debug.apk
 ```
-Then enable the aVow Accessibility Service in **Settings → Accessibility → Installed Apps**.
 
-### Option B — full edition (GitHub power build with Device Owner)
+**Full edition** — adds Device Owner (requires a device with no accounts added yet):
+
 ```bash
 ./gradlew assembleFullDebug
 adb install app/build/outputs/apk/full/debug/app-full-debug.apk
+adb shell dpm set-device-owner com.avow.app.plus/com.avow.app.receiver.DeviceAdmin
 ```
-Grant Device Owner (requires a device with **no** existing accounts):
-1. Connect the device with USB Debugging enabled.
-2. Remove all user accounts (Settings → Accounts).
-3. Assign device owner:
-   ```bash
-   adb shell dpm set-device-owner com.avow.app.plus/com.avow.app.receiver.DeviceAdmin
-   ```
-4. Re-add user accounts.
-5. Enable the aVow Accessibility Service in **Settings → Accessibility → Installed Apps**.
 
----
+> The `set-device-owner` step only works on a device with no accounts configured — remove them in **Settings → Accounts** first, then re-add them afterward.
 
-## Verification Suite
-Run JUnit and MockK local unit tests:
+Finally, turn on the aVow accessibility service in **Settings → Accessibility**.
+
+## How it works
+
+aVow enforces limits with an **AccessibilityService** that watches which app (or website) is in the foreground and steps in when it's one you've blocked. Vow state is stored locally and signed (HMAC via the Android Keystore) so it can't be quietly edited, and the countdown runs against the device's monotonic uptime so changing the clock doesn't buy you anything. An optional local **VpnService** blocks domains across every browser without sending traffic anywhere.
+
+Worth a look if you want to dig in:
+
+- [`BlockerService.kt`](app/src/main/java/com/avow/app/service/BlockerService.kt) — the foreground/website watcher and enforcement.
+- [`VowDataStore.kt`](app/src/main/java/com/avow/app/data/VowDataStore.kt) — signed, tamper-evident vow state.
+- [`DomainVpnService.kt`](app/src/main/java/com/avow/app/vpn/DomainVpnService.kt) — the on-device domain filter.
+- [`DeviceAdmin.kt`](app/src/full/java/com/avow/app/receiver/DeviceAdmin.kt) — Device Owner locks *(full edition)*.
+
+## Tech stack
+
+Kotlin · Jetpack Compose · Coroutines · DataStore · WorkManager · SQLite · AccessibilityService · VpnService · Android Keystore
+
+## Testing
+
 ```bash
-./gradlew testLiteDebugUnitTest
+./gradlew testLiteDebugUnitTest testFullDebugUnitTest
 ```
+
+The suite focuses on the risky paths — lock/unlock, tamper detection, reboot recovery, and the blocking logic.
+
+## Privacy
+
+aVow has no servers, accounts, or analytics, and nothing you do leaves your device. See [PRIVACY_POLICY.md](PRIVACY_POLICY.md) for exactly what it accesses and why.
+
+## Docs
+
+- **[FAQ](FAQ.md)** — how vows work, unblocking, removing Device Owner, and troubleshooting.
+- **[Terms of Use](TERMS.md)** — the "use at your own risk" disclaimer (worth reading before a long vow).
+- **[Privacy Policy](PRIVACY_POLICY.md)** · **[Security Policy](SECURITY.md)** · **[Contributing](CONTRIBUTING.md)**
+
+## Contributing
+
+Issues, ideas, and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? Please report it privately per [SECURITY.md](SECURITY.md).
+
+## License
+
+aVow's source is released under the [GNU General Public License v3.0](LICENSE). Use of the app itself
+is covered by the [Terms of Use](TERMS.md).
+
+## Author
+
+Built by Daniel Olusheki · avowtheapp@gmail.com
