@@ -30,7 +30,7 @@ class BlockerServiceSettingsInterceptTest {
         every { android.util.Log.i(any(), any()) } returns 0
 
         service = spyk(BlockerService())
-        every { service.packageName } returns "com.avow.app"
+        every { service.packageName } returns "com.makeavow.app"
         
         // Inject the mocked VowDataStore via reflection since it is private
         val dsField = BlockerService::class.java.getDeclaredField("vowDataStore")

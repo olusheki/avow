@@ -40,7 +40,7 @@ class DoomscrollServiceGlueTest {
         every { android.util.Log.d(any(), any()) } returns 0
 
         service = spyk(BlockerService())
-        every { service.packageName } returns "com.avow.app"
+        every { service.packageName } returns "com.makeavow.app"
         every { service.startActivity(any()) } returns Unit
         // No base context on the spy: return null for getSystemService (POWER_SERVICE) so the
         // "screen interactive?" check treats it as unknown and proceeds.
