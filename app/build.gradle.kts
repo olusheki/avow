@@ -12,7 +12,9 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
     }
 
     defaultConfig {
-        applicationId = "com.avow.app"
+        // Play/install identity. NOTE: intentionally differs from the code `namespace` (com.avow.app)
+        // because com.avow.app was already claimed by another app on Google Play.
+        applicationId = "com.makeavow.app"
         minSdk = 34
         targetSdk = 36
         versionCode = 1
@@ -25,7 +27,7 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
     productFlavors {
         create("lite") {
             dimension = "distribution"
-            // Play build: "aVow", applicationId com.avow.app, no device-admin surface.
+            // Play build: "aVow", applicationId com.makeavow.app, no device-admin surface.
         }
         create("full") {
             dimension = "distribution"

@@ -17,9 +17,9 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test. The full flavor suffixes the id (com.avow.app.plus), so
-        // assert the shared prefix rather than a flavor-specific literal.
+        // The install ID is BuildConfig.APPLICATION_ID (com.makeavow.app, +".plus" on the full
+        // flavor) — assert against it rather than a hardcoded literal.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertTrue(appContext.packageName.startsWith("com.avow.app"))
+        assertEquals(com.avow.app.BuildConfig.APPLICATION_ID, appContext.packageName)
     }
 }
