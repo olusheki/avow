@@ -736,9 +736,15 @@ class BlockerService : AccessibilityService() {
         for (w in wins) {
             val inPip = try { w.isInPictureInPictureMode } catch (e: Throwable) { false }
             val isApp = try { w.type == AccessibilityWindowInfo.TYPE_APPLICATION } catch (e: Throwable) { false }
-            // Only the evading windows: a PiP pop-out, or a split-screen pane. Plain fullscreen apps
-            // are already covered by the normal foreground checks.
-            if (!inPip && !(splitScreen && isApp)) continue
+            // The recents/overview carousel renders each recent app as its own TYPE_APPLICATION
+            // window, so appWindowCount can be >= 2 with no split-screen at all. Those snapshots are
+            // frozen and inactive — the overview UI is what's active — so requiring the pane to be the
+            // active window distinguishes a real split-screen (user touching the blocked pane) from a
+            // user simply scrolling the app switcher to swipe the app away. Without this, closing a
+            // blocked app from recents falsely triggered the evasion penalty. PiP is exempt from the
+            // active check: a PiP window is *never* the active window, yet it is the real evasion.
+            val isActive = try { w.isActive } catch (e: Throwable) { false }
+            if (!inPip && !(splitScreen && isApp && isActive)) continue
             val root = try { w.root } catch (e: Throwable) { null } ?: continue
             val pkg = try {
                 root.packageName?.toString()

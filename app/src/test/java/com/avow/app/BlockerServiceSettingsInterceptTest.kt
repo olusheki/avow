@@ -30,7 +30,7 @@ class BlockerServiceSettingsInterceptTest {
         every { android.util.Log.i(any(), any()) } returns 0
 
         service = spyk(BlockerService())
-        every { service.packageName } returns "com.avow.app"
+        every { service.packageName } returns "com.makeavow.app"
         
         // Inject the mocked VowDataStore via reflection since it is private
         val dsField = BlockerService::class.java.getDeclaredField("vowDataStore")
@@ -456,6 +456,7 @@ class BlockerServiceSettingsInterceptTest {
         val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
         every { igWin.isInPictureInPictureMode } returns false
         every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.isActive } returns true
         every { igWin.root } returns igRoot
 
         val otherRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
@@ -463,6 +464,7 @@ class BlockerServiceSettingsInterceptTest {
         val otherWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
         every { otherWin.isInPictureInPictureMode } returns false
         every { otherWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { otherWin.isActive } returns false
         every { otherWin.root } returns otherRoot
 
         every { service.windows } returns listOf(igWin, otherWin)
@@ -507,6 +509,48 @@ class BlockerServiceSettingsInterceptTest {
         service.onAccessibilityEvent(event)
 
         // THEN: no evasion lockout — a single fullscreen target isn't evading anything
+        verify(exactly = 0) { service.startActivity(any()) }
+    }
+
+    @Test
+    fun testDoomscrollTargetInRecentsCarouselDoesNotTriggerEvasionLockout() {
+        // GIVEN: the shield is on for Instagram, and the user opens the recents/overview carousel to
+        // swipe the app away. The launcher renders each recent app as its own inactive TYPE_APPLICATION
+        // snapshot window, so appWindowCount >= 2 even though there is NO split-screen. None of the
+        // snapshots is the active window (the overview UI is). This previously false-triggered a
+        // penalty for someone merely closing the app.
+        setField("doomscrollShieldEnabled", true)
+        setField("doomscrollAllTime", true)
+        setField("doomscrollTargetApps", setOf("com.instagram.android"))
+        setField("currentForegroundPackage", "com.some.launcher")
+
+        val igRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { igRoot.packageName } returns "com.instagram.android"
+        val igWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { igWin.isInPictureInPictureMode } returns false
+        every { igWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { igWin.isActive } returns false
+        every { igWin.root } returns igRoot
+
+        val otherRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { otherRoot.packageName } returns "com.some.otherapp"
+        val otherWin = mockk<android.view.accessibility.AccessibilityWindowInfo>(relaxed = true)
+        every { otherWin.isInPictureInPictureMode } returns false
+        every { otherWin.type } returns android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+        every { otherWin.isActive } returns false
+        every { otherWin.root } returns otherRoot
+
+        every { service.windows } returns listOf(igWin, otherWin)
+
+        every { service.startActivity(any()) } returns Unit
+
+        val event = mockk<AccessibilityEvent>(relaxed = true)
+        every { event.packageName } returns "com.some.launcher"
+        every { event.eventType } returns AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        service.onAccessibilityEvent(event)
+
+        // THEN: no evasion lockout — inactive snapshots in the app switcher are not evasion
         verify(exactly = 0) { service.startActivity(any()) }
     }
 

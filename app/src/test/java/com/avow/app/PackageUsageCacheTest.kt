@@ -35,7 +35,7 @@ class PackageUsageCacheTest {
         every { android.util.Log.i(any(), any()) } returns 0
 
         service = spyk(BlockerService(), recordPrivateCalls = true)
-        every { service.packageName } returns "com.avow.app"
+        every { service.packageName } returns "com.makeavow.app"
         every { service["triggerBlackoutOverlay"](any<String>()) } returns Unit
 
         // Inject VowDataStore

@@ -54,7 +54,7 @@ Both build from one codebase and can be installed side by side.
 | --- | --- | --- |
 | Distribution | Google Play | GitHub (sideload) |
 | Enforcement | Accessibility service | Accessibility **+** Device Owner locks |
-| Application ID | `com.avow.app` | `com.avow.app.plus` |
+| Application ID | `com.makeavow.app` | `com.makeavow.app.plus` |
 
 The lite edition is Google Play–policy compliant. The full edition adds the hardened Device Owner enforcement for people who want a vow that's nearly impossible to bypass.
 
@@ -74,10 +74,13 @@ adb install app/build/outputs/apk/lite/debug/app-lite-debug.apk
 ```bash
 ./gradlew assembleFullDebug
 adb install app/build/outputs/apk/full/debug/app-full-debug.apk
-adb shell dpm set-device-owner com.avow.app.plus/com.avow.app.receiver.DeviceAdmin
+adb shell dpm set-device-owner com.makeavow.app.plus/com.avow.app.receiver.DeviceAdmin
 ```
 
-> The `set-device-owner` step only works on a device with no accounts configured — remove them in **Settings → Accounts** first, then re-add them afterward.
+> Two notes on that last command: the package is `com.makeavow.app.plus` (the install ID) but the
+> receiver class stays `com.avow.app.receiver.DeviceAdmin` (the code package) — that mismatch is
+> correct, not a typo. And `set-device-owner` only works on a device with no accounts configured —
+> remove them in **Settings → Accounts** first, then re-add them afterward.
 
 Finally, turn on the aVow accessibility service in **Settings → Accessibility**.
 
